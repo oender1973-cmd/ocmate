@@ -212,6 +212,9 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
 .keys{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;color:var(--muted)}
 .keys kbd{font-family:var(--f-mono);font-size:12px;background:var(--raise);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:2px 7px;color:var(--fg);white-space:nowrap}
 .note{font-size:13px;color:var(--muted);line-height:1.5}
+.addmsg{font-size:14px;line-height:1.5;padding:10px 12px;border-radius:7px;background:var(--bg);border:1px solid var(--line);word-break:break-word}
+.addmsg.err{color:var(--live);border-color:#5a2028}
+.addmsg.busy{color:var(--tally)}
 
 /* Modal + Toast */
 .modal{position:fixed;inset:0;z-index:50;background:rgba(3,5,8,.72);display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
@@ -343,6 +346,9 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 const initials=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const IN_APP=location.hostname==='appassets.androidplatform.net';
+const APP_VER='1.2';
+const UA_PRESETS=[['','Standard (OCMate)'],['VLC/3.0.20 LibVLC/3.0.20','VLC'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
+function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
 
 const I={
   up:'<path d="M6 15l6-6 6 6"/>',down:'<path d="M6 9l6 6 6-6"/>',left:'<path d="M15 6l-6 6 6 6"/>',right:'<path d="M9 6l6 6-6 6"/>',
@@ -534,7 +540,20 @@ function catchupUrl(c,p){
 const canCatchup=(c,p)=>!!(c&&c.catchup&&p&&p.start<Date.now()&&p.start>=Date.now()-c.catchup.days*864e5);
 
 /* ---------- Player ---------- */
-function netMsg(e){const m=String(e&&e.message||e);if(/Failed to fetch|NetworkError|network error|Load failed/i.test(m))return(IN_APP?'Server nicht erreichbar.':'Server nicht erreichbar oder blockiert den Browser-Zugriff (CORS).')+' ['+m+']';return m}
+/* Technische Fehler in verständliche Hinweise übersetzen; die Rohmeldung bleibt in [ ] für die Fehlersuche */
+function netMsg(e){
+  const m=String(e&&e.message||e);const raw=' ['+m.slice(0,160)+']';
+  if(/UnknownHost|ERR_NAME_NOT_RESOLVED|Unable to resolve/i.test(m))return'Server-Adresse nicht gefunden. Prüfe den Link auf Tippfehler.'+raw;
+  if(/SSL|Certificate|CertPath|Trust anchor|handshake/i.test(m))return'Das Sicherheitszertifikat des Servers wird nicht akzeptiert. Versuche den Link mit http:// statt https://.'+raw;
+  if(/SocketTimeout|timed? ?out/i.test(m))return'Der Server antwortet nicht (Zeitüberschreitung). Später erneut versuchen oder Adresse prüfen.'+raw;
+  if(/ConnectException|refused|ECONNREFUSED|NoRouteToHost/i.test(m))return'Verbindung abgelehnt. Prüfe Adresse und Port (z. B. :8080).'+raw;
+  if(/unexpected end of stream|EOFException|Connection reset|ProtocolException/i.test(m))return'Der Server hat die Verbindung abgebrochen. Manche Anbieter lassen nur bestimmte Player zu: unter Einstellungen → Verbindung einen anderen User-Agent wählen.'+raw;
+  if(/^HTTP 401|^HTTP 403/.test(m))return'Zugriff verweigert. Prüfe Benutzername und Passwort im Link oder wähle unter Einstellungen → Verbindung einen anderen User-Agent.'+raw;
+  if(/^HTTP 404/.test(m))return'Unter diesem Link liegt nichts (404). Prüfe den Link.'+raw;
+  if(/^HTTP 5\d\d/.test(m))return'Der Server meldet einen Fehler.'+raw;
+  if(/Failed to fetch|NetworkError|network error|Load failed/i.test(m))return(IN_APP?'Server nicht erreichbar.':'Server nicht erreichbar oder blockiert den Browser-Zugriff (CORS).')+raw;
+  return m;
+}
 function stopVideo(v){if(v._hls){v._hls.destroy();v._hls=null}v.pause();v.removeAttribute('src');v.load()}
 function playUrl(v,url,onErr,onReady){
   stopVideo(v);
@@ -726,9 +745,10 @@ function renderMV(){
 function stopMV(){$$('.slot video').forEach(v=>{if(v._key){stopVideo(v);v._key=null}})}
 
 /* ---------- Einstellungen ---------- */
-let addMode='url',delArm=null,resetArm=false;
+let addMode='url',delArm=null,resetArm=false,addDraft=null,addMsg=null,adding=false;
+const TXT='autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"';
 function renderSettings(){
-  const p=pl(),pid=P.activeId,e=S.epgInfo;
+  const p=pl(),pid=P.activeId,e=S.epgInfo,D=(addDraft&&addDraft.mode===addMode)?addDraft:{};
   const plRows=P.playlists.map(x=>{const meta=x.type==='xtream'?`Xtream · ${esc(x.server)} · ${esc(x.user)}`:x.type==='file'?'M3U-Datei'+(x.volatile?' · nicht gespeichert, nach Neustart erneut hochladen':''):x.type==='demo'?'Eingebaute Testkanäle':`M3U · ${esc(x.url)}`;
     return`<div class="plrow"><div class="pmeta"><b>${esc(x.name)}${x.id===pid?' <span class="tag live" style="margin-left:6px">Aktiv</span>':''}</b><small>${meta}${x.exp?` · Abo bis ${new Date(x.exp).toLocaleDateString('de-DE')}`:''}</small></div><div class="acts">${x.id!==pid?`<button class="btn" data-act="use" data-id="${x.id}">Aktivieren</button>`:`<button class="btn" data-act="reload" data-id="${x.id}">Neu laden</button>`}<button class="btn danger" data-act="del" data-id="${x.id}">${delArm===x.id?'Wirklich löschen?':'Löschen'}</button></div></div>`}).join('')||'<p class="sub">Keine Playlist vorhanden.</p>';
   const lockedPid=arrOf(P.locked,pid),hiddenPid=arrOf(P.hidden,pid);
@@ -738,23 +758,27 @@ function renderSettings(){
   <section><h2>Playlist hinzufügen</h2>
     <div class="card">
       <div class="seg" role="group" aria-label="Quelle">${[['url','M3U-Link'],['file','M3U-Datei'],['xtream','Xtream Codes']].map(([k,l])=>`<button data-add="${k}" aria-pressed="${addMode===k}">${l}</button>`).join('')}</div>
-      <form id="addForm" class="card" style="background:transparent;border:0;padding:0">
-        <div class="fld"><label for="aName">Name</label><input id="aName" required placeholder="z. B. Mein Anbieter"></div>
-        ${addMode==='url'?`<div class="fld"><label for="aUrl">M3U-Link</label><input id="aUrl" type="url" required placeholder="https://…/playlist.m3u"></div>`:''}
-        ${addMode==='file'?`<div class="fld"><label for="aFile">M3U-Datei</label><input id="aFile" type="file" accept=".m3u,.m3u8,.txt,audio/x-mpegurl,application/vnd.apple.mpegurl" required></div>`:''}
-        ${addMode==='xtream'?`<div class="fld"><label for="aSrv">Server-Adresse</label><input id="aSrv" required placeholder="http://anbieter.tv:8080"></div>
-          <div class="grid2"><div class="fld"><label for="aUser">Benutzername</label><input id="aUser" required autocomplete="off"></div><div class="fld"><label for="aPass">Passwort</label><input id="aPass" type="password" required autocomplete="off"></div></div>
-          <div class="fld"><label for="aExt">Stream-Format</label><select id="aExt"><option value="m3u8">HLS (m3u8) – empfohlen für Browser</option><option value="ts">MPEG-TS (ts)</option></select></div>`:''}
-        ${addMode!=='xtream'?`<div class="fld"><label for="aEpg">EPG-Link (XMLTV, optional)</label><input id="aEpg" type="url" placeholder="Leer lassen, wenn die Playlist einen EPG-Link enthält"></div>`:''}
-        <div><button class="btn primary" type="submit">Hinzufügen und laden</button></div>
+      <form id="addForm" class="card" style="background:transparent;border:0;padding:0" novalidate>
+        <div class="fld"><label for="aName">Name (optional)</label><input id="aName" ${TXT} value="${esc(D.name||'')}" placeholder="z. B. Mein Anbieter"></div>
+        ${addMode==='url'?`<div class="fld"><label for="aUrl">M3U-Link</label><input id="aUrl" type="text" inputmode="url" ${TXT} value="${esc(D.url||'')}" placeholder="http://…/get.php?username=…"></div>`:''}
+        ${addMode==='file'?`<div class="fld"><label for="aFile">M3U-Datei</label><input id="aFile" type="file" accept=".m3u,.m3u8,.txt,audio/x-mpegurl,application/vnd.apple.mpegurl"></div>`:''}
+        ${addMode==='xtream'?`<div class="fld"><label for="aSrv">Server-Adresse</label><input id="aSrv" type="text" inputmode="url" ${TXT} value="${esc(D.srv||'')}" placeholder="http://anbieter.tv:8080"></div>
+          <div class="grid2"><div class="fld"><label for="aUser">Benutzername</label><input id="aUser" ${TXT} value="${esc(D.user||'')}"></div><div class="fld"><label for="aPass">Passwort</label><input id="aPass" type="password" ${TXT} value="${esc(D.pass||'')}"></div></div>
+          <div class="fld"><label for="aExt">Stream-Format</label><select id="aExt"><option value="m3u8">HLS (m3u8) – empfohlen</option><option value="ts" ${D.ext==='ts'?'selected':''}>MPEG-TS (ts)</option></select></div>`:''}
+        ${addMode!=='xtream'?`<div class="fld"><label for="aEpg">EPG-Link (XMLTV, optional)</label><input id="aEpg" type="text" inputmode="url" ${TXT} value="${esc(D.epg||'')}" placeholder="Leer lassen, wenn die Playlist einen EPG-Link enthält"></div>`:''}
+        <div class="addmsg ${addMsg?addMsg.k:''}" id="addMsg" ${addMsg?'':'hidden'}>${addMsg?esc(addMsg.t):''}</div>
+        <div><button class="btn primary" type="submit" id="addBtn" ${adding?'disabled':''}>${adding?'Wird geladen…':'Hinzufügen und laden'}</button></div>
       </form>
     </div></section>
   <section><h2>EPG</h2><p class="sub">${esc(p?p.name:'')} · ${epgState}</p>
     <div class="card">
-      ${p&&p.type!=='demo'?`<div class="fld"><label for="eUrl">EPG-Link (XMLTV, auch .gz)</label><input id="eUrl" type="url" value="${esc(p.epgUrl||'')}" placeholder="${esc(S.headerEpg||(p.type==='xtream'?'Vom Xtream-Server':'https://…/epg.xml.gz'))}"></div>
+      ${p&&p.type!=='demo'?`<div class="fld"><label for="eUrl">EPG-Link (XMLTV, auch .gz)</label><input id="eUrl" type="text" inputmode="url" ${TXT} value="${esc(p.epgUrl||'')}" placeholder="${esc(S.headerEpg||(p.type==='xtream'?'Vom Xtream-Server':'https://…/epg.xml.gz'))}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="epgSave">Speichern und laden</button><label class="btn" for="eFile">EPG-Datei laden</label><input id="eFile" type="file" accept=".xml,.gz,.xmltv" hidden></div>`:'<p class="note">Die Demo nutzt ein erfundenes Programm.</p>'}
       <div class="grid3"><div class="fld"><label for="eOff">Zeitversatz in Stunden</label><input id="eOff" type="number" step="0.5" min="-12" max="12" value="${P.epgOffset}"></div></div>
     </div></section>
+  ${IN_APP?`<section><h2>Verbindung</h2><p class="sub">Manche Anbieter lassen nur bestimmte Player zu. Wenn eine Playlist nicht lädt, probiere hier einen anderen User-Agent und lade sie neu.</p>
+    <div class="card"><div class="grid2"><div class="fld"><label for="uaSel">User-Agent</label><select id="uaSel">${UA_PRESETS.map(([v,l])=>`<option value="${esc(v)}" ${(P.ua||'')===v?'selected':''}>${esc(l)}</option>`).join('')}${P.ua&&!UA_PRESETS.some(x=>x[0]===P.ua)?`<option value="${esc(P.ua)}" selected>Eigener</option>`:''}</select></div>
+    <div class="fld"><label for="uaOwn">Eigener User-Agent (optional)</label><input id="uaOwn" ${TXT} value="${UA_PRESETS.some(x=>x[0]===(P.ua||''))?'':esc(P.ua)}" placeholder="z. B. vom Anbieter vorgegeben"></div></div></div></section>`:''}
   <section><h2>Gruppen</h2><p class="sub">Ausgeblendete Gruppen verschwinden aus Listen und Guide. Gesperrte Gruppen brauchen die PIN.</p>
     <div class="tw"><table class="gtable"><thead><tr><th>Gruppe</th><th>Kanäle</th><th style="text-align:center">Ausblenden</th><th style="text-align:center">Sperren</th></tr></thead><tbody>
     ${S.groups.map((g,i)=>`<tr><td>${esc(g.name)}</td><td class="mono">${g.count}</td><td class="c"><input type="checkbox" data-hide="${i}" ${hiddenPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} ausblenden"></td><td class="c"><input type="checkbox" data-lock="${i}" ${lockedPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} sperren"></td></tr>`).join('')||'<tr><td colspan="4">Keine Gruppen.</td></tr>'}
@@ -767,10 +791,11 @@ function renderSettings(){
     <kbd>↑ ↓</kbd><span>In der Kanalliste bewegen, OK/Enter spielt ab</span>
     <kbd>Kanal +/− · Bild ↑/↓</kbd><span>Kanal wechseln</span>
     <kbd>0–9</kbd><span>Kanalnummer eingeben</span>
-    <kbd>Zurück · ⌫</kbd><span>Zum vorherigen Kanal</span>
+    ${IN_APP?'<kbd>Zurück</kbd><span>Fenster schließen, zurück zu Live TV, zuletzt App beenden</span><kbd>„Letzter“-Button</kbd><span>Zum vorherigen Kanal</span>':'<kbd>Zurück · ⌫</kbd><span>Zum vorherigen Kanal</span>'}
     <kbd>G</kbd><span>TV-Guide</span><kbd>L</kbd><span>Live TV</span><kbd>F</kbd><span>Vollbild</span><kbd>S</kbd><span>Favorit umschalten</span></div></div></section>
   <section><h2>Daten</h2><div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="clearHist">Verlauf leeren</button><button class="btn danger" data-act="reset">${resetArm?'Wirklich alles löschen?':'Alles zurücksetzen'}</button></div>
-    <p class="note">Aufnahmen auf Festplatte wie bei TiviMate sind im Browser nicht möglich. Catch-up funktioniert, wenn dein Anbieter Archive anbietet.</p></div></section>`;
+    <p class="note">Aufnahmen auf Festplatte wie bei TiviMate sind nicht möglich. Catch-up funktioniert, wenn dein Anbieter Archive anbietet.</p>
+    <p class="note mono">OCMate Version ${APP_VER}${IN_APP?' · TV-App':' · Browser'}</p></div></section>`;
 }
 async function onSettingsClick(e){
   const ab=e.target.closest('[data-add]');if(ab){addMode=ab.dataset.add;renderSettings();return}
@@ -780,7 +805,7 @@ async function onSettingsClick(e){
   else if(a==='reload'){await activate(id);toast('Playlist neu geladen')}
   else if(a==='del'){if(delArm!==id){delArm=id;renderSettings();return}delArm=null;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);['fav','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);
     if(P.activeId===id){P.activeId=P.playlists[0]?P.playlists[0].id:null;save();await activate(P.activeId)}else{save();renderPlSel();renderSettings()}}
-  else if(a==='epgSave'){const p=pl();p.epgUrl=$('#eUrl').value.trim();save();loadEPG(p).then(renderSettings);renderSettings()}
+  else if(a==='epgSave'){const p=pl();p.epgUrl=fixUrl($('#eUrl').value);save();loadEPG(p).then(renderSettings);renderSettings()}
   else if(a==='pinSet'){const v=$('#pinNew').value;if(!/^\d{4}$/.test(v)){toast('Die PIN muss aus 4 Ziffern bestehen.');return}if(P.pin&&!(await askPin('Aktuelle PIN eingeben')))return;P.pin=v;save();toast('PIN gespeichert');renderSettings()}
   else if(a==='relock'){S.unlocked=false;refreshAll();renderSettings();toast('Gesperrte Gruppen sind wieder gesperrt')}
   else if(a==='clearHist'){P.hist[P.activeId]=[];save();renderGroups();toast('Verlauf geleert')}
@@ -793,17 +818,37 @@ async function onSettingsChange(e){
     if(!P.pin){t.checked=false;toast('Setze zuerst unten eine PIN.');return}
     if(!t.checked&&!(await askPin())){t.checked=true;return}
     t.checked?l.push(g):l.splice(l.indexOf(g),1);save();refreshAll()}
+  else if(t.id==='uaSel'||t.id==='uaOwn'){P.ua=t.id==='uaOwn'?t.value.trim():t.value;save();applyUA();renderSettings();toast('User-Agent gespeichert. Playlist mit „Neu laden“ erneut versuchen.')}
   else if(t.id==='eOff'){P.epgOffset=+t.value||0;save();if(S.epgText){applyEPG(S.epgText,S.epgInfo.label);epgPill();refreshAll()}else if(pl()&&pl().type==='demo')loadEPG(pl())}
   else if(t.id==='eFile'&&t.files[0]){S.epgInfo={state:'busy'};epgPill();try{const txt=await bufToText(new Uint8Array(await t.files[0].arrayBuffer()));S.epgText=txt;applyEPG(txt,t.files[0].name)}catch(err){S.epgInfo={state:'err',msg:String(err.message||err)}}epgPill();refreshAll();renderSettings()}
 }
+/* Links ohne http:// ergänzen, Leerzeichen und Zeilenumbrüche aus der TV-Tastatur entfernen */
+function fixUrl(u){u=String(u||'').replace(/\s+/g,'');if(u&&!/^https?:\/\//i.test(u))u='http://'+u.replace(/^\/+/,'');return u}
+function hostName(u){try{return new URL(u).hostname}catch(e){return''}}
+function setAddMsg(t,k){addMsg=t?{t,k}:null;const m=$('#addMsg');if(m){m.hidden=!t;m.className='addmsg '+(k||'');m.textContent=t||''}}
 async function onAdd(e){
-  e.preventDefault();const id=uid(),name=$('#aName').value.trim()||'Playlist';let p;
-  if(addMode==='url')p={id,name,type:'url',url:$('#aUrl').value.trim(),epgUrl:$('#aEpg').value.trim()};
-  else if(addMode==='xtream')p={id,name,type:'xtream',server:$('#aSrv').value.trim(),user:$('#aUser').value.trim(),pass:$('#aPass').value,ext:$('#aExt').value};
-  else{const f=$('#aFile').files[0];if(!f)return;const txt=await f.text();if(!/#EXTINF/i.test(txt)){toast('Die Datei sieht nicht wie eine M3U-Playlist aus.');return}
-    p={id,name,type:'file',epgUrl:$('#aEpg').value.trim()};S.volatileText[id]=txt;if(!saveText(id,txt)){p.volatile=true;toast('Datei zu groß zum Speichern. Sie gilt nur bis zum Neuladen der Seite.')}}
-  P.playlists.push(p);save();addMode='url';await activate(id);
-  if(!S.loadErr){toast(`${S.channels.length} Kanäle geladen`);go('live')}else renderSettings();
+  e.preventDefault();if(adding)return;
+  const v=id=>{const el=$('#'+id);return el?el.value.trim():''};
+  const D={mode:addMode,name:v('aName'),url:fixUrl(v('aUrl')),epg:fixUrl(v('aEpg')),srv:fixUrl(v('aSrv')),user:v('aUser'),pass:$('#aPass')?$('#aPass').value:'',ext:$('#aExt')?$('#aExt').value:'m3u8'};
+  addDraft=D;
+  const file=$('#aFile')&&$('#aFile').files[0];
+  if(addMode==='url'&&!D.url){setAddMsg('Bitte den M3U-Link eintragen.','err');$('#aUrl').focus();return}
+  if(addMode==='xtream'&&(!D.srv||!D.user||!D.pass)){setAddMsg('Bitte Server-Adresse, Benutzername und Passwort eintragen.','err');return}
+  if(addMode==='file'&&!file){setAddMsg('Bitte eine M3U-Datei auswählen.','err');return}
+  const id=uid(),name=D.name||hostName(D.url||D.srv)||(file&&file.name)||'Playlist';let p;
+  if(addMode==='url')p={id,name,type:'url',url:D.url,epgUrl:D.epg};
+  else if(addMode==='xtream')p={id,name,type:'xtream',server:D.srv,user:D.user,pass:D.pass,ext:D.ext};
+  else{const txt=await file.text();if(!/#EXTINF/i.test(txt)){setAddMsg('Die Datei sieht nicht wie eine M3U-Playlist aus.','err');return}
+    p={id,name,type:'file',epgUrl:D.epg};S.volatileText[id]=txt;if(!saveText(id,txt))p.volatile=true}
+  const prev=P.activeId;adding=true;setAddMsg('Playlist wird geladen…','busy');const b=$('#addBtn');if(b){b.disabled=true;b.textContent='Wird geladen…'}
+  P.playlists.push(p);save();
+  await activate(id);adding=false;
+  if(S.loadErr){
+    const msg=S.loadErr;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);delete S.volatileText[id];['fav','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);save();
+    if(prev&&P.playlists.some(x=>x.id===prev))await activate(prev);else{P.activeId=P.playlists[0]?P.playlists[0].id:null;save();renderPlSel()}
+    addMsg={t:'Nicht gespeichert: '+msg,k:'err'};renderSettings();const f=$('#aUrl')||$('#aSrv');f&&f.focus();return}
+  addDraft=null;addMsg=null;addMode='url';
+  toast(`${S.channels.length} Kanäle geladen${p.volatile?' (Datei zu groß zum Speichern, gilt bis zum Neustart)':''}`);go('live');
 }
 
 /* ---------- Modal, PIN, Auswahl ---------- */
@@ -938,7 +983,7 @@ setInterval(()=>{if(S.view==='live'){refreshRows();if(S.current&&$('#modal').hid
 /* ---------- Start ---------- */
 if(!P.playlists.length){P.playlists.push({id:'demo',name:'OCMate Demo',type:'demo'});P.activeId='demo';save()}
 if(!pl())P.activeId=P.playlists[0].id;
-buildMV();renderPlSel();activate(P.activeId);
+applyUA();buildMV();renderPlSel();activate(P.activeId);
 </script>
 </body>
 </html>

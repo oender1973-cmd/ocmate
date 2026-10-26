@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -31,6 +32,16 @@ class MainActivity : Activity() {
     private lateinit var chrome: WebChromeClient
     private var fullView: View? = null
     private var fullCallback: WebChromeClient.CustomViewCallback? = null
+
+    // Vom Nutzer gewählter User-Agent für Anfragen an IPTV-Server (leer = WebView-Standard)
+    @Volatile private var customUa: String = ""
+
+    inner class Bridge {
+        @JavascriptInterface
+        fun setUserAgent(ua: String?) {
+            customUa = ua?.trim() ?: ""
+        }
+    }
 
     private val assetHost = "appassets.androidplatform.net"
     // http statt https: IPTV-Server liefern meist über http, so gibt es keine Mixed-Content-Sperre.
@@ -60,6 +71,7 @@ class MainActivity : Activity() {
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = "$userAgentString OCMate/1.0"
         }
+        web.addJavascriptInterface(Bridge(), "OCNative")
         web.isFocusable = true
         web.isFocusableInTouchMode = true
 
@@ -119,6 +131,8 @@ class MainActivity : Activity() {
                 if (k.equals("Origin", true) || k.equals("Referer", true) || k.equals("Accept-Encoding", true)) continue
                 conn.setRequestProperty(k, v)
             }
+            val ua = customUa
+            if (ua.isNotEmpty()) conn.setRequestProperty("User-Agent", ua)
             val code = conn.responseCode
             val location = conn.getHeaderField("Location")
             if (code in 300..399 && location != null && hops < 6) {
