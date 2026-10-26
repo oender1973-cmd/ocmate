@@ -35,14 +35,26 @@ class MainActivity : Activity() {
     private var fullView: View? = null
     private var fullCallback: WebChromeClient.CustomViewCallback? = null
 
-    // Vom Nutzer gewählter User-Agent für Anfragen an IPTV-Server (leer = WebView-Standard)
+    // User-Agent für Anfragen an IPTV-Server. Leer = Player-Kennung (viele Panels sperren Browser),
+    // "webview" = Kennung des eingebauten Browsers, sonst der eingetragene Wert.
     @Volatile private var customUa: String = ""
+    private val playerUa = "VLC/3.0.20 LibVLC/3.0.20"
     private var webDead = false
+
+    // Offene Video-Verbindungen, damit sie beim Umschalten sofort geschlossen werden können
+    // (sonst zählt der Anbieter zwei gleichzeitige Verbindungen und sperrt).
+    private val openStreams = java.util.Collections.synchronizedSet(HashSet<HttpURLConnection>())
 
     inner class Bridge {
         @JavascriptInterface
         fun setUserAgent(ua: String?) {
             customUa = ua?.trim() ?: ""
+        }
+
+        @JavascriptInterface
+        fun stopStreams() {
+            val list = synchronized(openStreams) { openStreams.toList().also { openStreams.clear() } }
+            for (c in list) Thread { try { c.disconnect() } catch (e: Exception) {} }.start()
         }
     }
 
@@ -144,7 +156,10 @@ class MainActivity : Activity() {
                 conn.setRequestProperty(k, v)
             }
             val ua = customUa
-            if (ua.isNotEmpty()) conn.setRequestProperty("User-Agent", ua)
+            when {
+                ua.isEmpty() -> conn.setRequestProperty("User-Agent", playerUa)
+                ua != "webview" -> conn.setRequestProperty("User-Agent", ua)
+            }
             val code = conn.responseCode
             val location = conn.getHeaderField("Location")
             if (code in 300..399 && location != null && hops < 6) {
@@ -180,6 +195,17 @@ class MainActivity : Activity() {
             }
             body = ByteArrayInputStream(fixed.toByteArray(Charsets.UTF_8))
             charset = "utf-8"
+        } else if (code < 400 && (mime.startsWith("video/") || mime == "application/octet-stream")) {
+            // Video-Verbindung merken; beim Schließen durch die Oberfläche auch die Verbindung trennen
+            val c = conn
+            openStreams.add(c)
+            body = object : java.io.FilterInputStream(body) {
+                override fun close() {
+                    try { super.close() } catch (e: Exception) {}
+                    openStreams.remove(c)
+                    try { c.disconnect() } catch (e: Exception) {}
+                }
+            }
         }
 
         val out = HashMap<String, String>()

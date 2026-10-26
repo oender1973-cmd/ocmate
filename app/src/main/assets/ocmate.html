@@ -348,8 +348,9 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 const initials=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const IN_APP=location.hostname==='appassets.androidplatform.net';
-const APP_VER='1.4';
-const UA_PRESETS=[['','Standard (OCMate)'],['VLC/3.0.20 LibVLC/3.0.20','VLC'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
+const APP_VER='1.5';
+const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
+const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
 
 const I={
@@ -526,6 +527,7 @@ async function loadEPG(p,force){
   try{const text=await fetchText(url);if(P.activeId!==p.id)return;S.epgText=text;applyEPG(text,url);}
   catch(e){S.epgInfo={state:'err',msg:netMsg(e)}}
   try{localStorage.removeItem('ocmate.epgBusy')}catch(e){}
+  XT.tried.clear();
   epgPill();refreshAll();
 }
 function epgPill(){const e=S.epgInfo,el=$('#epgPill');el.className='pill';
@@ -534,6 +536,24 @@ function epgPill(){const e=S.epgInfo,el=$('#epgPill');el.className='pill';
   else if(e.state==='err'){el.classList.add('err');el.textContent='EPG Fehler'}
   else el.textContent='EPG –';
   el.title=e.state==='err'?e.msg:(e.label||'');
+}
+/* Xtream: Kurz-EPG pro Sender nachladen (für Sender ohne Programm aus der EPG-Datei) */
+const XT={tried:new Set(),queue:[],busy:0};
+function b64(s){try{return new TextDecoder().decode(Uint8Array.from(atob(s||''),ch=>ch.charCodeAt(0)))}catch(e){return s||''}}
+function wantShortEpg(c){
+  if(!c||!c.xc||S.epgInfo.state==='busy')return;const k='xt:'+c.xc.id;
+  if(XT.tried.has(k)||(c.epgId&&S.epg.has(c.epgId)&&S.epg.get(c.epgId).length))return;
+  XT.tried.add(k);XT.queue.push(c);pumpShortEpg();
+}
+async function pumpShortEpg(){
+  while(XT.busy<3&&XT.queue.length){const c=XT.queue.shift();XT.busy++;
+    (async()=>{try{const p=P.playlists.find(x=>x.id===c.pid);if(!p||p.type!=='xtream')return;
+      const d=await getJSON(`${xtBase(p)}/player_api.php?${xtQ(p)}&action=get_short_epg&stream_id=${c.xc.id}&limit=12`);
+      const arr=((d&&d.epg_listings)||[]).map(x=>({start:(+x.start_timestamp||Date.parse(x.start))*((+x.start_timestamp)?1000:1),stop:(+x.stop_timestamp||Date.parse(x.end||x.stop))*((+x.stop_timestamp)?1000:1),title:b64(x.title)||'Ohne Titel',desc:b64(x.description)})).filter(x=>x.start&&x.stop>x.start).sort((a,b)=>a.start-b.start);
+      if(arr.length&&P.activeId===c.pid){const k='xt:'+c.xc.id;S.epg.set(k,arr);c.epgId=k;
+        const r=$(`#chList .row[data-key="${CSS.escape(c.key)}"]`);if(r)r.innerHTML=rowInner(c);
+        if(S.current===c&&$('#modal').hidden)renderInfo()}
+    }catch(e){}finally{XT.busy--;pumpShortEpg()}})()}
 }
 const progsOf=c=>(c&&c.epgId&&S.epg.get(c.epgId))||[];
 function nowIdx(a,t){let lo=0,hi=a.length-1;while(lo<=hi){const m=(lo+hi)>>1;if(a[m].stop<=t)lo=m+1;else if(a[m].start>t)hi=m-1;else return m}return-1}
@@ -592,7 +612,9 @@ function playUrl(v,url,onErr,onReady){
   if(!IN_APP&&location.protocol==='https:'&&/^http:/i.test(url)){onErr('mixed');return}
   const isHls=/\.m3u8(\?|$)/i.test(url)||/[?&](type|output|extension)=(m3u8|hls)/i.test(url);
   if(isHls&&window.Hls&&Hls.isSupported()){
-    const h=new Hls({enableWorker:true,backBufferLength:30,maxBufferLength:30});v._hls=h;let tries=0;
+    const once={default:{maxTimeToFirstByteMs:12000,maxLoadTimeMs:20000,timeoutRetry:null,errorRetry:null}};
+    // Keine automatischen Wiederholungen der Playlist: manche Anbieter vergeben Einmal-Links (Fehler 555 bei Doppelabruf)
+    const h=new Hls({enableWorker:true,backBufferLength:30,maxBufferLength:30,manifestLoadPolicy:once,playlistLoadPolicy:{default:{maxTimeToFirstByteMs:10000,maxLoadTimeMs:20000,timeoutRetry:{maxNumRetry:2,retryDelayMs:0,maxRetryDelayMs:0},errorRetry:{maxNumRetry:1,retryDelayMs:1000,maxRetryDelayMs:8000}}}});v._hls=h;let tries=0;
     h.on(Hls.Events.MANIFEST_PARSED,()=>{v.play().catch(()=>{});onReady&&onReady(h)});
     h.on(Hls.Events.ERROR,(ev,d)=>{if(!d.fatal)return;
       if(d.type===Hls.ErrorTypes.NETWORK_ERROR&&tries<2&&d.details!=='manifestLoadError'){tries++;h.startLoad();return}
@@ -639,9 +661,11 @@ async function play(c,opts={}){
   const attempt=i=>playUrl(video,urls[i],(k,det)=>{
       if(S.playToken!==token)return;
       tried.push((urls[i].match(/\.(m3u8|ts)(\?|$)/i)||['','direkt'])[1].toUpperCase()+': '+(det||k));
-      if(i+1<urls.length){stopVideo(video);showStage('<div class="big">Verbinde…</div>Anderes Stream-Format wird versucht.');setTimeout(()=>{if(S.playToken===token){showStage(null);attempt(i+1)}},1500)}
+      if(i+1<urls.length){stopVideo(video);nativeStop();showStage('<div class="big">Verbinde…</div>Anderes Stream-Format wird versucht.');setTimeout(()=>{if(S.playToken===token){showStage(null);attempt(i+1)}},1500)}
       else fail(k,tried.join('  |  '))},h=>tracks(h));
-  attempt(0);
+  // Alte Verbindung erst sauber schließen, sonst zählt der Anbieter zwei gleichzeitige Verbindungen
+  const had=!!(video._ts||video._hls||video.getAttribute('src'));stopVideo(video);nativeStop();
+  setTimeout(()=>{if(S.playToken===token)attempt(0)},had?800:0);
   const h=arrOf(P.hist,c.pid);const i=h.indexOf(c.key);if(i>=0)h.splice(i,1);h.unshift(c.key);h.length=Math.min(h.length,60);
   P.last[c.pid]=c.key;save();
   osd(`<span class="mono">${c.num}</span>${esc(c.name)}${cu?' <span class="tag cu">Catch-up</span>':''}`);
@@ -704,7 +728,8 @@ function renderChannels(keep){
   if(!S.list.length){$('#chList').innerHTML=`<div class="empty">${S.group==='__fav'&&!S.q?'Noch keine Favoriten. Halte einen Kanal gedrückt (oder Rechtsklick), um ihn zu merken.':S.q?'Kein Kanal gefunden.':'Keine Kanäle in dieser Ansicht.'}</div>`}
   more();while(S.limit<Math.min(prevLimit,S.list.length))more();renderHits();
 }
-function more(){if(S.limit>=S.list.length)return;const n=Math.min(S.list.length,S.limit+120);let h='';for(let i=S.limit;i<n;i++)h+=rowHTML(S.list[i]);$('#chList').insertAdjacentHTML('beforeend',h);S.limit=n}
+function more(){if(S.limit>=S.list.length)return;const n=Math.min(S.list.length,S.limit+120);let h='';for(let i=S.limit;i<n;i++)h+=rowHTML(S.list[i]);$('#chList').insertAdjacentHTML('beforeend',h);
+  for(let i=S.limit;i<Math.min(n,S.limit+40);i++)wantShortEpg(S.list[i]);S.limit=n}
 new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting))more()},{rootMargin:'600px'}).observe($('#sent'));
 function renderHits(){
   const box=$('#hits');if(!S.q||S.q.length<2){box.innerHTML='';return}
@@ -722,6 +747,7 @@ function renderInfo(){
   if(!c){const last=S.byKey.get(P.last[P.activeId]);
     info.innerHTML=last?`<div class="acts"><button class="btn primary" id="bResume">${ic('play','fill')} Weiter mit ${esc(last.name)}</button></div>`:'';
     sch.innerHTML='';if(last)$('#bResume').onclick=()=>play(last);return}
+  wantShortEpg(c);
   const a=progsOf(c),now=Date.now(),i=nowIdx(a,now),p=S.catchup||a[i],nx=S.catchup?null:(i>=0?a[i+1]:a.find(x=>x.start>now));
   const lock=isLocked(c)&&!S.unlocked;
   let h=`<div class="chline">${S.catchup?'<span class="tag cu">Catch-up</span>':'<span class="tag live">Live</span>'}<span class="mono">${c.num}</span><b style="color:var(--fg)">${esc(c.name)}</b><span>· ${esc(c.group)}</span></div>`;
@@ -948,6 +974,7 @@ async function activate(id){
   P.activeId=id;save();renderPlSel();
   stopVideo(video);showStage('<div class="big">Bereit</div>Wähle einen Kanal.');stopMV();
   S.current=null;S.prev=null;S.catchup=null;S.channels=[];S.byKey=new Map();S.groups=[];S.epg=new Map();S.epgText=null;S.epgInfo={state:'none'};S.headerEpg='';
+  XT.tried.clear();XT.queue.length=0;
   S.group='__all';S.guideGroup=null;S.mv.keys=[null,null,null,null];S.loadErr='';S.loading=true;epgPill();refreshAll();
   const p=pl();if(!p){S.loading=false;refreshAll();return}
   if(p.type==='url'&&toXtream(p))save();
