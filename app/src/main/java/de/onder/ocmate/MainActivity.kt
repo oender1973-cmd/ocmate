@@ -18,6 +18,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.webkit.WebViewAssetLoader
 import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -157,10 +158,29 @@ class MainActivity : Activity() {
 
         var code = conn.responseCode
         if (code in 300..399 || code < 100 || code > 599) code = 502
-        val body = (if (code >= 400) conn.errorStream else conn.inputStream) ?: ByteArrayInputStream(ByteArray(0))
+        var body: InputStream = (if (code >= 400) conn.errorStream else conn.inputStream) ?: ByteArrayInputStream(ByteArray(0))
         val type = conn.contentType ?: "application/octet-stream"
         val mime = type.substringBefore(';').trim().ifEmpty { "application/octet-stream" }
-        val charset = Regex("charset=([^;]+)", RegexOption.IGNORE_CASE).find(type)?.groupValues?.get(1)?.trim()
+        var charset = Regex("charset=([^;]+)", RegexOption.IGNORE_CASE).find(type)?.groupValues?.get(1)?.trim()
+
+        // Xtream-Server leiten Streams oft auf einen anderen Server um. Die Oberfläche sieht nur die
+        // ursprüngliche Adresse, daher relative Segment-Adressen in HLS-Listen auf die Zieladresse umschreiben.
+        val isPlaylist = mime.contains("mpegurl", true) || URL(target).path.endsWith(".m3u8", true)
+        if (hops > 0 && code < 400 && isPlaylist) {
+            val base = URL(target)
+            val text = body.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val uriAttr = Regex("URI=\"([^\"]+)\"")
+            val fixed = text.lineSequence().joinToString("\n") { line ->
+                val t = line.trim()
+                when {
+                    t.isEmpty() -> line
+                    t.startsWith("#") -> uriAttr.replace(line) { m -> "URI=\"" + URL(base, m.groupValues[1]) + "\"" }
+                    else -> URL(base, t).toString()
+                }
+            }
+            body = ByteArrayInputStream(fixed.toByteArray(Charsets.UTF_8))
+            charset = "utf-8"
+        }
 
         val out = HashMap<String, String>()
         for ((k, v) in conn.headerFields) {
