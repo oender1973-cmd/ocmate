@@ -356,7 +356,7 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 const initials=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const IN_APP=location.hostname==='appassets.androidplatform.net';
-const APP_VER='1.6';
+const APP_VER='1.7';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
@@ -627,7 +627,7 @@ function playUrl(v,url,onErr,onReady){
     h.on(Hls.Events.ERROR,(ev,d)=>{if(!d.fatal)return;
       if(d.type===Hls.ErrorTypes.NETWORK_ERROR&&tries<2&&d.details!=='manifestLoadError'){tries++;h.startLoad();return}
       if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&tries<2){tries++;h.recoverMediaError();return}
-      const code=d.response&&d.response.code;onErr(/manifestLoad|levelLoad|fragLoad/.test(d.details||'')?'net':'media',(d.details||d.type)+(code?' · HTTP '+code:''))});
+      const code=d.response&&d.response.code,txt=d.response&&d.response.text;onErr(/manifestLoad|levelLoad|fragLoad/.test(d.details||'')?'net':'media',(d.details||d.type)+(code?' · HTTP '+code:'')+(txt&&typeof txt==='string'&&txt.length<140?' · '+txt:''))});
     h.loadSource(url);h.attachMedia(v);
   }else if(isTsUrl(url)&&canTs()){
     const t=mpegts.createPlayer({type:'mpegts',isLive:true,url},{enableWorker:false,lazyLoad:false,seekType:'param',liveBufferLatencyChasing:true,liveBufferLatencyMaxLatency:6,liveBufferLatencyMinRemain:1.5,stashInitialSize:256*1024});

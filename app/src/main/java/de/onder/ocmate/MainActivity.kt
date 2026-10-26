@@ -65,6 +65,10 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Cookies merken: manche Stream-Server leiten erst nach Setzen eines Cookies weiter
+        if (java.net.CookieHandler.getDefault() == null) {
+            java.net.CookieHandler.setDefault(java.net.CookieManager(null, java.net.CookiePolicy.ACCEPT_ALL))
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         root = FrameLayout(this)
@@ -172,7 +176,16 @@ class MainActivity : Activity() {
         }
 
         var code = conn.responseCode
-        if (code in 300..399 || code < 100 || code > 599) code = 502
+        val orig = code
+        // Verständlicher Grund für die Fehlerzeile in der Oberfläche (nur ASCII erlaubt)
+        var why: String? = null
+        if (code in 300..399) {
+            why = if (conn.getHeaderField("Location") == null) "Redirect $orig without target" else "Too many redirects ($hops) at ${URL(target).host}"
+            code = 502
+        } else if (code < 100 || code > 599) {
+            why = "Invalid server reply (status $orig) from ${URL(target).host}"
+            code = 502
+        }
         var body: InputStream = (if (code >= 400) conn.errorStream else conn.inputStream) ?: ByteArrayInputStream(ByteArray(0))
         val type = conn.contentType ?: "application/octet-stream"
         val mime = type.substringBefore(';').trim().ifEmpty { "application/octet-stream" }
@@ -218,13 +231,16 @@ class MainActivity : Activity() {
         }
         out["Access-Control-Allow-Origin"] = "*"
         out["Access-Control-Expose-Headers"] = "*"
-        val reason = conn.responseMessage?.takeIf { it.isNotBlank() } ?: if (code < 400) "OK" else "Error"
+        val hostInfo = if (hops > 0) " via ${URL(target).host}" else ""
+        val reason = why ?: (conn.responseMessage?.takeIf { it.isNotBlank() }?.let { it + hostInfo }
+            ?: if (code < 400) "OK" else "HTTP $orig$hostInfo")
         return WebResourceResponse(mime, charset, code, reason, out, body)
     }
 
     private fun errorResponse(msg: String): WebResourceResponse =
         WebResourceResponse(
-            "text/plain", "utf-8", 502, "Bad Gateway",
+            "text/plain", "utf-8", 502,
+            msg.replace(Regex("[^\\x20-\\x7E]"), "?").take(120).ifBlank { "Bad Gateway" },
             mapOf("Access-Control-Allow-Origin" to "*"),
             ByteArrayInputStream(msg.toByteArray())
         )
