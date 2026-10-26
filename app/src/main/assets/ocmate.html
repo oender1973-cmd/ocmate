@@ -420,7 +420,8 @@ function parseM3U(text,pid){
 /* ---------- Xtream Codes ---------- */
 function xtBase(p){let s=p.server.trim().replace(/\/+$/,'');if(!/^https?:\/\//i.test(s))s='http://'+s;return s}
 function xtQ(p){return'username='+encodeURIComponent(p.user)+'&password='+encodeURIComponent(p.pass)}
-async function getJSON(url){const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+async function httpErr(r){let t='';try{t=(await r.text()).slice(0,160)}catch(e){}return new Error('HTTP '+r.status+(t?' – '+t:''))}
+async function getJSON(url){const r=await fetch(url);if(!r.ok)throw await httpErr(r);const t=await r.text();try{return JSON.parse(t)}catch(e){throw new Error('Antwort ist kein JSON: '+t.slice(0,120))}}
 async function loadXtream(p){
   const b=xtBase(p),q=xtQ(p);
   const info=await getJSON(`${b}/player_api.php?${q}`);
@@ -479,7 +480,7 @@ function applyEPG(text,label){
   S.epgInfo={state:'ok',label,channels:ids.size,matched,progs,at:now};
 }
 async function fetchText(url){
-  const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);
+  const r=await fetch(url);if(!r.ok)throw await httpErr(r);
   return bufToText(new Uint8Array(await r.arrayBuffer()));
 }
 async function bufToText(buf){
@@ -533,7 +534,7 @@ function catchupUrl(c,p){
 const canCatchup=(c,p)=>!!(c&&c.catchup&&p&&p.start<Date.now()&&p.start>=Date.now()-c.catchup.days*864e5);
 
 /* ---------- Player ---------- */
-function netMsg(e){const m=String(e&&e.message||e);if(/Failed to fetch|NetworkError|Load failed/i.test(m))return'Server nicht erreichbar oder blockiert den Browser-Zugriff (CORS).';return m}
+function netMsg(e){const m=String(e&&e.message||e);if(/Failed to fetch|NetworkError|network error|Load failed/i.test(m))return(IN_APP?'Server nicht erreichbar.':'Server nicht erreichbar oder blockiert den Browser-Zugriff (CORS).')+' ['+m+']';return m}
 function stopVideo(v){if(v._hls){v._hls.destroy();v._hls=null}v.pause();v.removeAttribute('src');v.load()}
 function playUrl(v,url,onErr,onReady){
   stopVideo(v);
@@ -621,7 +622,7 @@ function rowHTML(c){
 function renderChannels(){
   S.list=currentList();S.limit=0;$('#chList').innerHTML='';$('#chTitle').textContent=groupLabel();$('#chCount').textContent=S.list.length;
   if(S.loading){$('#chList').innerHTML='<div class="empty">Playlist wird geladen…</div>';$('#hits').innerHTML='';return}
-  if(S.loadErr){$('#chList').innerHTML=`<div class="empty"><b>Playlist konnte nicht geladen werden.</b><br>${esc(S.loadErr)}<br><br>Prüfe URL bzw. Zugangsdaten unter Einstellungen. Viele Anbieter blockieren den Zugriff aus dem Browser (CORS). Dann hilft es, die M3U-Datei herunterzuladen und als Datei hinzuzufügen.</div>`;$('#hits').innerHTML='';return}
+  if(S.loadErr){$('#chList').innerHTML=`<div class="empty"><b>Playlist konnte nicht geladen werden.</b><br>${esc(S.loadErr)}<br><br>Prüfe Adresse bzw. Zugangsdaten unter Einstellungen.${IN_APP?'':' Viele Anbieter blockieren den Zugriff aus dem Browser (CORS). Dann hilft es, die M3U-Datei herunterzuladen und als Datei hinzuzufügen.'}</div>`;$('#hits').innerHTML='';return}
   if(!S.list.length){$('#chList').innerHTML=`<div class="empty">${S.group==='__fav'&&!S.q?'Noch keine Favoriten. Halte einen Kanal gedrückt (oder Rechtsklick), um ihn zu merken.':S.q?'Kein Kanal gefunden.':'Keine Kanäle in dieser Ansicht.'}</div>`}
   more();renderHits();
 }

@@ -33,7 +33,8 @@ class MainActivity : Activity() {
     private var fullCallback: WebChromeClient.CustomViewCallback? = null
 
     private val assetHost = "appassets.androidplatform.net"
-    private val startUrl = "https://$assetHost/assets/ocmate.html"
+    // http statt https: IPTV-Server liefern meist über http, so gibt es keine Mixed-Content-Sperre.
+    private val startUrl = "http://$assetHost/assets/ocmate.html"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,6 +48,7 @@ class MainActivity : Activity() {
 
         val assets = WebViewAssetLoader.Builder()
             .setDomain(assetHost)
+            .setHttpAllowed(true)
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
 
@@ -71,7 +73,7 @@ class MainActivity : Activity() {
                 return try {
                     forward(uri.toString(), request.requestHeaders ?: emptyMap())
                 } catch (e: Exception) {
-                    errorResponse(e.message ?: "Netzwerkfehler")
+                    errorResponse("${e.javaClass.simpleName}: ${e.message ?: "Netzwerkfehler"}")
                 }
             }
         }
