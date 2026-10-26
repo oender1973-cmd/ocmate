@@ -253,6 +253,14 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
   .mvgrid{grid-template-columns:minmax(0,1fr)}
   .grid2,.grid3{grid-template-columns:minmax(0,1fr)}
 }
+/* Eigenes Vollbild (TV-App): nur das Video, alles andere ausgeblendet */
+body.fs .hdr,body.fs #groups,body.fs #chCol,body.fs .ctrl,body.fs .info,body.fs .sched{display:none!important}
+body.fs #live.on{display:block;height:auto}
+body.fs #stage{position:fixed;inset:0;z-index:40;width:100vw;height:100vh;aspect-ratio:auto;max-width:none}
+body.fs .osd{top:auto;bottom:calc(28px + env(safe-area-inset-bottom,0px));left:50%;right:auto;transform:translateX(-50%);flex-direction:column;align-items:flex-start;gap:4px;min-width:min(560px,80vw);padding:14px 20px}
+.osd .ot{display:flex;gap:10px;align-items:baseline}
+.osd .op{font-family:var(--f-body);font-size:16px;font-weight:500;color:var(--muted)}
+.osd .op b{color:var(--fg);font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 </style>
 </head>
@@ -284,7 +292,7 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
     </div>
     <div class="col player-col">
       <div class="stage" id="stage">
-        <video id="video" playsinline controls></video>
+        <video id="video" playsinline controls controlslist="nofullscreen nodownload noremoteplayback" disablepictureinpicture="false"></video>
         <div class="stage-msg" id="stageMsg"><div class="msgbox"><div class="big">Kein Kanal ausgewählt</div>Wähle links einen Kanal. Mit der Fernbedienung oder Tastatur: Pfeiltasten und OK.</div></div>
         <div class="osd" id="osd" hidden></div>
       </div>
@@ -348,7 +356,7 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 const initials=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const IN_APP=location.hostname==='appassets.androidplatform.net';
-const APP_VER='1.5';
+const APP_VER='1.6';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
@@ -668,7 +676,7 @@ async function play(c,opts={}){
   setTimeout(()=>{if(S.playToken===token)attempt(0)},had?800:0);
   const h=arrOf(P.hist,c.pid);const i=h.indexOf(c.key);if(i>=0)h.splice(i,1);h.unshift(c.key);h.length=Math.min(h.length,60);
   P.last[c.pid]=c.key;save();
-  osd(`<span class="mono">${c.num}</span>${esc(c.name)}${cu?' <span class="tag cu">Catch-up</span>':''}`);
+  if(isFs())osdInfo();else osd(`<span class="mono">${c.num}</span>${esc(c.name)}${cu?' <span class="tag cu">Catch-up</span>':''}`);
   $$('.row.on').forEach(r=>r.classList.remove('on'));const row=$(`.row[data-key="${CSS.escape(c.key)}"]`);if(row)row.classList.add('on');
   renderInfo();ctrlState();
   if(S.view!=='live')go('live');
@@ -1000,7 +1008,9 @@ $('#groups').onclick=async e=>{const b=e.target.closest('.grp');if(!b)return;con
   const gs=$('#groups').scrollTop;renderGroups();$('#groups').scrollTop=gs;renderChannels();if(innerWidth>=900)$('#chCol').scrollTop=0;
   // Wie bei TiviMate: nach der Gruppenwahl direkt in die Kanalliste springen
   const first=$('#chList .row');if(first)first.focus({preventScroll:true});else{const gb=$(`.grp[data-g="${CSS.escape(g)}"]`);gb&&gb.focus({preventScroll:true})}};
-$('#chList').onclick=e=>{const r=e.target.closest('.row');if(r)play(S.byKey.get(r.dataset.key),{zapList:S.list})};
+$('#chList').onclick=e=>{const r=e.target.closest('.row');if(!r)return;const c=S.byKey.get(r.dataset.key);
+  if(S.current===c&&!S.catchup&&$('#stageMsg').hidden){fullscreen();return}
+  play(c,{zapList:S.list})};
 $('#chList').addEventListener('contextmenu',e=>{const r=e.target.closest('.row');if(!r)return;e.preventDefault();toggleFav(S.byKey.get(r.dataset.key))});
 $('#hits').onclick=e=>{const b=e.target.closest('[data-hit]');if(!b)return;const[c,p]=$('#hits')._hits[+b.dataset.hit];openProg(c,p)};
 $('#sched').onclick=e=>{const b=e.target.closest('[data-ps]');if(!b||!S.current)return;const p=progsOf(S.current)[+b.dataset.ps];if(p)openProg(S.current,p)};
@@ -1009,7 +1019,14 @@ $('#bPrevCh').onclick=()=>zap(-1);$('#bNextCh').onclick=()=>zap(1);
 $('#bLast').onclick=()=>S.prev&&play(S.prev,{keepScroll:true});
 $('#bFav').onclick=()=>toggleFav(S.current);
 $('#bPip').onclick=async()=>{try{if(document.pictureInPictureElement)await document.exitPictureInPicture();else await video.requestPictureInPicture()}catch(e){toast('Bild-in-Bild wird hier nicht unterstützt.')}};
-function fullscreen(){const st=$('#stage');try{if(document.fullscreenElement)document.exitFullscreen();else if(st.requestFullscreen)st.requestFullscreen();else if(video.webkitEnterFullscreen)video.webkitEnterFullscreen()}catch(e){}}
+const isFs=()=>document.body.classList.contains('fs');
+function setFs(on){document.body.classList.toggle('fs',on);video.controls=!on;if(on){const st=$('#stage');st.tabIndex=-1;st.focus({preventScroll:true});osdInfo()}else{const r=$('#chList .row.on');if(r)r.focus({preventScroll:true})}}
+/* Kanal-Einblendung im Vollbild: Nummer, Name, was läuft und was danach kommt */
+function osdInfo(){const c=S.current;if(!c)return;const a=progsOf(c),i=nowIdx(a,Date.now()),p=S.catchup||a[i],n=S.catchup?null:a[i+1];
+  osd(`<div class="ot"><span class="mono">${c.num}</span>${esc(c.name)}${S.catchup?' <span class="tag cu">Catch-up</span>':''}</div>${p?`<div class="op">${hm(p.start)}–${hm(p.stop)} <b>${esc(p.title)}</b></div>`:''}${n?`<div class="op">Danach ${hm(n.start)} ${esc(n.title)}</div>`:''}`,4000)}
+function fullscreen(){
+  if(IN_APP||!document.documentElement.requestFullscreen){setFs(!isFs());return}
+  const st=$('#stage');try{if(document.fullscreenElement)document.exitFullscreen();else st.requestFullscreen()}catch(e){setFs(!isFs())}}
 $('#bFull').onclick=fullscreen;
 $('#gGroup').onchange=e=>{S.guideGroup=e.target.value;renderGuide()};
 $('#gBack').innerHTML=ic('left');$('#gFwd').innerHTML=ic('right');
@@ -1041,6 +1058,7 @@ function spatial(dir){
 /* Zurück-Taste der App: true = von OCMate erledigt, false = App schließen */
 window.ocBack=function(){
   if(!$('#modal').hidden){closeModal(null);return true}
+  if(isFs()){setFs(false);return true}
   if(document.fullscreenElement){document.exitFullscreen();return true}
   if(S.view!=='live'){go('live');return true}
   if(document.activeElement&&document.activeElement.matches('input,select')){document.activeElement.blur();return true}
@@ -1055,6 +1073,12 @@ document.addEventListener('keydown',e=>{
   const k=e.key;
   if(/^[0-9]$/.test(k)&&S.view==='live'){S.numBuf=(S.numBuf+k).slice(-4);osd(`<span class="mono">${S.numBuf}_</span>`,0);clearTimeout(S.numTimer);
     S.numTimer=setTimeout(()=>{const n=+S.numBuf;S.numBuf='';const c=S.channels.find(x=>x.num===n&&!isHidden(x));if(c)play(c,{keepScroll:true});else osd(`<span class="mono">${n}</span> Kein Kanal`)},1500);return}
+  if(isFs()){
+    if(k==='ArrowUp'||k==='ChannelUp'||k==='PageUp'){e.preventDefault();zap(-1);return}
+    if(k==='ArrowDown'||k==='ChannelDown'||k==='PageDown'){e.preventDefault();zap(1);return}
+    if(k==='Enter'||k===' '||k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();osdInfo();return}
+    if(k==='Escape'){setFs(false);return}
+  }
   if(k==='ChannelUp'||k==='PageUp'||k==='+'){e.preventDefault();zap(-1);return}
   if(k==='ChannelDown'||k==='PageDown'||k==='-'){e.preventDefault();zap(1);return}
   if(ARROWS.includes(k)){
