@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -35,6 +36,7 @@ class MainActivity : Activity() {
 
     // Vom Nutzer gewählter User-Agent für Anfragen an IPTV-Server (leer = WebView-Standard)
     @Volatile private var customUa: String = ""
+    private var webDead = false
 
     inner class Bridge {
         @JavascriptInterface
@@ -88,6 +90,15 @@ class MainActivity : Activity() {
                     errorResponse("${e.javaClass.simpleName}: ${e.message ?: "Netzwerkfehler"}")
                 }
             }
+
+            // Stürzt die Oberfläche ab (z. B. Speicher voll bei riesigem EPG), App neu aufbauen statt schwarzem Bild
+            @SuppressLint("NewApi")
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                webDead = true
+                root.removeView(view)
+                recreate()
+                return true
+            }
         }
 
         chrome = object : WebChromeClient() {
@@ -113,7 +124,7 @@ class MainActivity : Activity() {
         }
         web.webChromeClient = chrome
 
-        if (savedInstanceState != null) web.restoreState(savedInstanceState) else web.loadUrl(startUrl)
+        if (savedInstanceState == null || web.restoreState(savedInstanceState) == null) web.loadUrl(startUrl)
         web.requestFocus()
     }
 
@@ -200,7 +211,7 @@ class MainActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        web.saveState(outState)
+        if (!webDead) web.saveState(outState)
     }
 
     override fun onPause() {

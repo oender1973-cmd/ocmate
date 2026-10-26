@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script src="hls.min.js"></script>
+<script src="mpegts.js"></script>
 <style>
 /* Layout: Sendezentrale — Kopfleiste, dann drei Spalten (Gruppen · Kanäle · Player). Mobil: Player oben, Gruppen als Chips, Kanalliste darunter. */
 :root{
@@ -346,7 +347,7 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 const initials=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const IN_APP=location.hostname==='appassets.androidplatform.net';
-const APP_VER='1.2';
+const APP_VER='1.3';
 const UA_PRESETS=[['','Standard (OCMate)'],['VLC/3.0.20 LibVLC/3.0.20','VLC'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
 
@@ -427,6 +428,13 @@ function parseM3U(text,pid){
 function xtBase(p){let s=p.server.trim().replace(/\/+$/,'');if(!/^https?:\/\//i.test(s))s='http://'+s;return s}
 function xtQ(p){return'username='+encodeURIComponent(p.user)+'&password='+encodeURIComponent(p.pass)}
 async function httpErr(r){let t='';try{t=(await r.text()).slice(0,160)}catch(e){}return new Error('HTTP '+r.status+(t?' – '+t:''))}
+/* Erkennt Xtream-Playlist-Links wie http://server:8080/get.php?username=…&password=…&type=m3u */
+function xtFromUrl(u){
+  const m=String(u||'').match(/^(https?:\/\/[^/?#]+)(?:\/[^?#]*)?\/get\.php\?([^#]*)$/i);if(!m)return null;
+  const q=new URLSearchParams(m[2]);const user=q.get('username'),pass=q.get('password');
+  return user&&pass?{server:m[1],user,pass}:null;
+}
+function toXtream(p){const x=xtFromUrl(p.url);if(!x)return false;Object.assign(p,{type:'xtream',server:x.server,user:x.user,pass:x.pass,ext:p.ext||'m3u8',m3uUrl:p.url});delete p.url;return true}
 async function getJSON(url){const r=await fetch(url);if(!r.ok)throw await httpErr(r);const t=await r.text();try{return JSON.parse(t)}catch(e){throw new Error('Antwort ist kein JSON: '+t.slice(0,120))}}
 async function loadXtream(p){
   const b=xtBase(p),q=xtQ(p);
@@ -495,12 +503,18 @@ async function bufToText(buf){
   return new TextDecoder().decode(buf);
 }
 function epgUrlFor(p){return p.epgUrl||S.headerEpg||''}
-async function loadEPG(p){
+async function loadEPG(p,force){
   if(p.type==='demo'){S.epg=demoEPG(S.channels);let n=0;for(const a of S.epg.values())n+=a.length;S.epgInfo={state:'ok',label:'Demo-EPG (erfundenes Programm)',channels:S.channels.length,matched:S.channels.length,progs:n,at:Date.now()};epgPill();refreshAll();return}
   const url=epgUrlFor(p);if(!url){S.epgInfo={state:'none'};epgPill();return}
+  // Absturzschutz: Brach das letzte Laden ab (Speicher voll), beim Start nicht automatisch wiederholen
+  let busy=null;try{busy=localStorage.getItem('ocmate.epgBusy')}catch(e){}
+  if(busy===p.id&&!force){try{localStorage.removeItem('ocmate.epgBusy')}catch(e){}
+    S.epgInfo={state:'err',msg:'Das EPG war beim letzten Mal zu groß für dieses Gerät und wurde übersprungen. Unter Einstellungen → EPG kannst du es erneut laden.'};epgPill();return}
   S.epgInfo={state:'busy'};epgPill();
+  try{localStorage.setItem('ocmate.epgBusy',p.id)}catch(e){}
   try{const text=await fetchText(url);if(P.activeId!==p.id)return;S.epgText=text;applyEPG(text,url);}
   catch(e){S.epgInfo={state:'err',msg:netMsg(e)}}
+  try{localStorage.removeItem('ocmate.epgBusy')}catch(e){}
   epgPill();refreshAll();
 }
 function epgPill(){const e=S.epgInfo,el=$('#epgPill');el.className='pill';
@@ -554,7 +568,14 @@ function netMsg(e){
   if(/Failed to fetch|NetworkError|network error|Load failed/i.test(m))return(IN_APP?'Server nicht erreichbar.':'Server nicht erreichbar oder blockiert den Browser-Zugriff (CORS).')+raw;
   return m;
 }
-function stopVideo(v){if(v._hls){v._hls.destroy();v._hls=null}v.pause();v.removeAttribute('src');v.load()}
+function stopVideo(v){
+  if(v._hls){v._hls.destroy();v._hls=null}
+  if(v._ts){try{v._ts.pause();v._ts.unload();v._ts.detachMediaElement();v._ts.destroy()}catch(e){}v._ts=null}
+  v.pause();v.removeAttribute('src');v.load();
+}
+/* MPEG-TS (.ts oder Xtream-Link ohne Endung) braucht mpegts.js; Browser spielen das nicht selbst */
+const isTsUrl=u=>/\.ts(\?|$)/i.test(u)||/\/\d+(\?|$)/.test(u)||/[?&](output|extension|type)=(ts|mpegts)/i.test(u);
+const canTs=()=>!!(window.mpegts&&mpegts.getFeatureList&&mpegts.getFeatureList().mseLivePlayback);
 function playUrl(v,url,onErr,onReady){
   stopVideo(v);
   if(!IN_APP&&location.protocol==='https:'&&/^http:/i.test(url)){onErr('mixed');return}
@@ -567,15 +588,22 @@ function playUrl(v,url,onErr,onReady){
       if(d.type===Hls.ErrorTypes.MEDIA_ERROR&&tries<2){tries++;h.recoverMediaError();return}
       onErr(d.details==='manifestLoadError'||d.details==='manifestLoadTimeOut'?'net':'media')});
     h.loadSource(url);h.attachMedia(v);
+  }else if(isTsUrl(url)&&canTs()){
+    const t=mpegts.createPlayer({type:'mpegts',isLive:true,url},{enableWorker:false,lazyLoad:false,seekType:'param',liveBufferLatencyChasing:true,liveBufferLatencyMaxLatency:6,liveBufferLatencyMinRemain:1.5,stashInitialSize:256*1024});
+    v._ts=t;let done=false;
+    t.on(mpegts.Events.ERROR,(type)=>{if(done)return;done=true;onErr(type===mpegts.ErrorTypes.NETWORK_ERROR?'net':'media')});
+    t.on(mpegts.Events.MEDIA_INFO,()=>onReady&&onReady(null));
+    t.attachMediaElement(v);t.load();
+    try{const pr=t.play();if(pr&&pr.catch)pr.catch(()=>{})}catch(e){}
   }else{
-    v.src=url;v.onerror=()=>onErr(/\.ts(\?|$)/i.test(url)?'ts':'media');
+    v.src=url;v.onerror=()=>onErr(isTsUrl(url)?'ts':'media');
     v.onloadedmetadata=()=>onReady&&onReady(null);v.play().catch(()=>{});
   }
 }
 const ERR={
   mixed:'Der Stream läuft über <b>http</b>, OCMate aber über <b>https</b>. Browser blockieren das. Öffne OCMate als lokale Datei oder frage deinen Anbieter nach https-Links.',
-  net:'Der Stream ist nicht erreichbar. Entweder ist der Kanal offline, oder der Server erlaubt keinen Zugriff aus dem Browser (CORS).',
-  ts:'Dieser Stream liefert MPEG-TS (.ts). Das spielen Browser nicht direkt ab. Bei Xtream in den Einstellungen das Format <b>m3u8</b> wählen.',
+  net:IN_APP?'Der Stream ist nicht erreichbar. Der Kanal ist offline, oder dein Abo erlaubt gerade keine weitere Verbindung.':'Der Stream ist nicht erreichbar. Entweder ist der Kanal offline, oder der Server erlaubt keinen Zugriff aus dem Browser (CORS).',
+  ts:'Dieser Stream liefert MPEG-TS (.ts), und dieses Gerät kann das nicht abspielen. Bei Xtream das Format <b>m3u8</b> wählen.',
   media:'Das Videoformat wird von diesem Browser nicht unterstützt oder der Stream ist fehlerhaft.'
 };
 const video=$('#video');
@@ -592,7 +620,10 @@ async function play(c,opts={}){
   if(opts.zapList)S.zap=opts.zapList;else if(!S.zap.includes(c))S.zap=S.list.length?S.list:S.channels;
   const url=cu?catchupUrl(c,cu):c.url;
   showStage(null);
-  playUrl(video,url,k=>showStage(`<div class="big err">Wiedergabe nicht möglich</div>${ERR[k]||ERR.media}`),h=>tracks(h));
+  const fail=k=>showStage(`<div class="big err">Wiedergabe nicht möglich</div>${ERR[k]||ERR.media}`);
+  // Xtream: liefert der Anbieter kein HLS (m3u8), automatisch auf MPEG-TS umschalten
+  const alt=/\.m3u8(\?|$)/i.test(url)&&xcParts(c)&&canTs()?url.replace(/\.m3u8(\?|$)/i,'.ts$1'):null;
+  playUrl(video,url,k=>{if(alt&&S.current===c){showStage(null);playUrl(video,alt,fail,h=>tracks(h))}else fail(k)},h=>tracks(h));
   const h=arrOf(P.hist,c.pid);const i=h.indexOf(c.key);if(i>=0)h.splice(i,1);h.unshift(c.key);h.length=Math.min(h.length,60);
   P.last[c.pid]=c.key;save();
   osd(`<span class="mono">${c.num}</span>${esc(c.name)}${cu?' <span class="tag cu">Catch-up</span>':''}`);
@@ -805,7 +836,7 @@ async function onSettingsClick(e){
   else if(a==='reload'){await activate(id);toast('Playlist neu geladen')}
   else if(a==='del'){if(delArm!==id){delArm=id;renderSettings();return}delArm=null;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);['fav','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);
     if(P.activeId===id){P.activeId=P.playlists[0]?P.playlists[0].id:null;save();await activate(P.activeId)}else{save();renderPlSel();renderSettings()}}
-  else if(a==='epgSave'){const p=pl();p.epgUrl=fixUrl($('#eUrl').value);save();loadEPG(p).then(renderSettings);renderSettings()}
+  else if(a==='epgSave'){const p=pl();p.epgUrl=fixUrl($('#eUrl').value);save();loadEPG(p,true).then(renderSettings);renderSettings()}
   else if(a==='pinSet'){const v=$('#pinNew').value;if(!/^\d{4}$/.test(v)){toast('Die PIN muss aus 4 Ziffern bestehen.');return}if(P.pin&&!(await askPin('Aktuelle PIN eingeben')))return;P.pin=v;save();toast('PIN gespeichert');renderSettings()}
   else if(a==='relock'){S.unlocked=false;refreshAll();renderSettings();toast('Gesperrte Gruppen sind wieder gesperrt')}
   else if(a==='clearHist'){P.hist[P.activeId]=[];save();renderGroups();toast('Verlauf geleert')}
@@ -836,7 +867,7 @@ async function onAdd(e){
   if(addMode==='xtream'&&(!D.srv||!D.user||!D.pass)){setAddMsg('Bitte Server-Adresse, Benutzername und Passwort eintragen.','err');return}
   if(addMode==='file'&&!file){setAddMsg('Bitte eine M3U-Datei auswählen.','err');return}
   const id=uid(),name=D.name||hostName(D.url||D.srv)||(file&&file.name)||'Playlist';let p;
-  if(addMode==='url')p={id,name,type:'url',url:D.url,epgUrl:D.epg};
+  if(addMode==='url'){p={id,name,type:'url',url:D.url,epgUrl:D.epg};toXtream(p)}
   else if(addMode==='xtream')p={id,name,type:'xtream',server:D.srv,user:D.user,pass:D.pass,ext:D.ext};
   else{const txt=await file.text();if(!/#EXTINF/i.test(txt)){setAddMsg('Die Datei sieht nicht wie eine M3U-Playlist aus.','err');return}
     p={id,name,type:'file',epgUrl:D.epg};S.volatileText[id]=txt;if(!saveText(id,txt))p.volatile=true}
@@ -891,6 +922,7 @@ async function activate(id){
   S.current=null;S.prev=null;S.catchup=null;S.channels=[];S.byKey=new Map();S.groups=[];S.epg=new Map();S.epgText=null;S.epgInfo={state:'none'};S.headerEpg='';
   S.group='__all';S.guideGroup=null;S.mv.keys=[null,null,null,null];S.loadErr='';S.loading=true;epgPill();refreshAll();
   const p=pl();if(!p){S.loading=false;refreshAll();return}
+  if(p.type==='url'&&toXtream(p))save();
   try{let r;
     if(p.type==='demo')r=parseM3U(DEMO_M3U,p.id);
     else if(p.type==='url'){const txt=await fetchText(p.url);if(!/#EXTINF/i.test(txt))throw new Error('Unter dem Link liegt keine M3U-Playlist.');r=parseM3U(txt,p.id)}
