@@ -103,6 +103,10 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
 .player-col{background:var(--bg);display:flex;flex-direction:column}
 .stage{position:relative;background:#000;aspect-ratio:16/9;max-width:100%;width:100%}
 .stage video{position:absolute;inset:0;width:100%;height:100%;background:#000}
+/* Samsung AVPlay: Video liegt in einer eigenen Ebene hinter der Seite, die Fläche bleibt durchsichtig */
+.stage object.av{position:absolute;inset:0;width:100%;height:100%}
+.stage.av{background:transparent}
+.stage.av video{display:none}
 .stage-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;background:radial-gradient(ellipse at center,#121b26 0%,#05070a 75%);color:var(--muted);line-height:1.5}
 .stage-msg .big{font-family:var(--f-display);font-size:22px;font-weight:600;color:var(--fg);margin-bottom:6px}
 .stage-msg .err{color:var(--live)}
@@ -355,8 +359,9 @@ const dayLabel=t=>{const d=new Date(t),n=new Date();const a=new Date(d).setHours
 const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
 const initials=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
-const IN_APP=location.hostname==='appassets.androidplatform.net';
-const APP_VER='1.7';
+const IS_TIZEN=!!window.tizen;
+const IN_APP=location.hostname==='appassets.androidplatform.net'||IS_TIZEN;
+const APP_VER='1.8';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
@@ -652,6 +657,32 @@ function showStage(html){const m=$('#stageMsg');if(html==null){m.hidden=true;ret
 let osdT=null;
 function osd(html,ms=2500){const o=$('#osd');o.innerHTML=html;o.hidden=false;clearTimeout(osdT);if(ms)osdT=setTimeout(()=>o.hidden=true,ms)}
 
+/* ---------- Samsung AVPlay (nur Tizen) ----------
+   Spielt HLS und MPEG-TS direkt mit dem Hardware-Player des Fernsehers. Die Anfragen stellt der
+   Fernseher selbst, daher gibt es keine Browser-Sperren, und der User-Agent lässt sich setzen. */
+const AV={on:false,tok:null};
+const avUse=()=>IS_TIZEN&&!!(window.webapis&&webapis.avplay)&&P.player!=='web';
+function avRect(){const b=$('#stage').getBoundingClientRect(),k=1920/innerWidth;return[b.left,b.top,b.width,b.height].map(v=>Math.round(v*k))}
+function avResize(){if(!AV.on)return;requestAnimationFrame(()=>{try{webapis.avplay.setDisplayRect(...avRect())}catch(e){}})}
+function avStop(){AV.tok=null;if(!AV.on)return;AV.on=false;try{webapis.avplay.stop()}catch(e){}try{webapis.avplay.close()}catch(e){}$('#stage').classList.remove('av')}
+function avPlay(url,onErr,onReady){
+  avStop();const a=webapis.avplay,tok=Symbol();AV.tok=tok;
+  if(!$('#stage object.av'))$('#stage').insertAdjacentHTML('afterbegin','<object class="av" type="application/avplayer"></object>');
+  try{
+    a.open(url);AV.on=true;$('#stage').classList.add('av');
+    if(P.ua!=='webview'){try{a.setStreamingProperty('USER_AGENT',P.ua||'VLC/3.0.20 LibVLC/3.0.20')}catch(e){}}
+    try{a.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX')}catch(e){}
+    a.setDisplayRect(...avRect());
+    a.setListener({
+      onbufferingstart(){},onbufferingprogress(){},onbufferingcomplete(){},
+      onstreamcompleted(){if(AV.tok===tok){avStop();onErr('net','AVPlay: Stream beendet')}},
+      onerror(t){if(AV.tok===tok){avStop();onErr('net','AVPlay: '+t)}},
+      onevent(){},oncurrentplaytime(){}
+    });
+    a.prepareAsync(()=>{if(AV.tok!==tok)return;try{a.play()}catch(e){}onReady&&onReady(null)},
+      e=>{if(AV.tok!==tok)return;avStop();onErr('net','AVPlay: '+((e&&(e.name||e.message))||e))});
+  }catch(e){avStop();onErr('media','AVPlay: '+((e&&(e.name||e.message))||e))}
+}
 async function play(c,opts={}){
   if(!c)return;
   if(isLocked(c)&&!S.unlocked){if(!(await askPin()))return}
@@ -664,15 +695,17 @@ async function play(c,opts={}){
   const fail=(k,det)=>showStage(`<div class="big err">Wiedergabe nicht möglich</div>${ERR[k]||ERR.media}${det?`<div class="note mono" style="margin-top:10px">${esc(det)}</div>`:''}`);
   // Xtream: zuerst MPEG-TS (bietet jeder Xtream-Server), dann HLS. Nie zwei Verbindungen gleichzeitig.
   let urls=[url];const x=xcParts(c);
-  if(!cu&&x&&canTs()){const base=url.replace(/\.(m3u8|ts)(\?.*)?$/i,'');urls=[base+'.ts',base+'.m3u8']}
+  const AVP=avUse();
+  if(!cu&&x&&(canTs()||AVP)){const base=url.replace(/\.(m3u8|ts)(\?.*)?$/i,'');urls=AVP?[base+'.m3u8',base+'.ts']:[base+'.ts',base+'.m3u8']}
   const tried=[],token=Symbol();S.playToken=token;
-  const attempt=i=>playUrl(video,urls[i],(k,det)=>{
+  const run=AVP?avPlay:(u,e,r)=>playUrl(video,u,e,r);
+  const attempt=i=>run(urls[i],(k,det)=>{
       if(S.playToken!==token)return;
       tried.push((urls[i].match(/\.(m3u8|ts)(\?|$)/i)||['','direkt'])[1].toUpperCase()+': '+(det||k));
-      if(i+1<urls.length){stopVideo(video);nativeStop();showStage('<div class="big">Verbinde…</div>Anderes Stream-Format wird versucht.');setTimeout(()=>{if(S.playToken===token){showStage(null);attempt(i+1)}},1500)}
+      if(i+1<urls.length){stopVideo(video);avStop();nativeStop();showStage('<div class="big">Verbinde…</div>Anderes Stream-Format wird versucht.');setTimeout(()=>{if(S.playToken===token){showStage(null);attempt(i+1)}},1500)}
       else fail(k,tried.join('  |  '))},h=>tracks(h));
   // Alte Verbindung erst sauber schließen, sonst zählt der Anbieter zwei gleichzeitige Verbindungen
-  const had=!!(video._ts||video._hls||video.getAttribute('src'));stopVideo(video);nativeStop();
+  const had=!!(video._ts||video._hls||video.getAttribute('src')||AV.on);stopVideo(video);avStop();nativeStop();
   setTimeout(()=>{if(S.playToken===token)attempt(0)},had?800:0);
   const h=arrOf(P.hist,c.pid);const i=h.indexOf(c.key);if(i>=0)h.splice(i,1);h.unshift(c.key);h.length=Math.min(h.length,60);
   P.last[c.pid]=c.key;save();
@@ -869,6 +902,8 @@ function renderSettings(){
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="epgSave">Speichern und laden</button><label class="btn" for="eFile">EPG-Datei laden</label><input id="eFile" type="file" accept=".xml,.gz,.xmltv" hidden></div>`:'<p class="note">Die Demo nutzt ein erfundenes Programm.</p>'}
       <div class="grid3"><div class="fld"><label for="eOff">Zeitversatz in Stunden</label><input id="eOff" type="number" step="0.5" min="-12" max="12" value="${P.epgOffset}"></div></div>
     </div></section>
+  ${IS_TIZEN?`<section><h2>Player</h2><p class="sub">Der Samsung-Player nutzt die Hardware des Fernsehers und spielt auch 4K. Falls ein Sender nur Ton oder ein schwarzes Bild zeigt, probiere den Web-Player.</p>
+    <div class="card"><div class="grid2"><div class="fld"><label for="plySel">Video-Player</label><select id="plySel"><option value="" ${P.player!=='web'?'selected':''}>Samsung-Player (empfohlen)</option><option value="web" ${P.player==='web'?'selected':''}>Web-Player</option></select></div></div></div></section>`:''}
   ${IN_APP?`<section><h2>Verbindung</h2><p class="sub">Manche Anbieter lassen nur bestimmte Player zu. Wenn eine Playlist nicht lädt, probiere hier einen anderen User-Agent und lade sie neu.</p>
     <div class="card"><div class="grid2"><div class="fld"><label for="uaSel">User-Agent</label><select id="uaSel">${UA_PRESETS.map(([v,l])=>`<option value="${esc(v)}" ${(P.ua||'')===v?'selected':''}>${esc(l)}</option>`).join('')}${P.ua&&!UA_PRESETS.some(x=>x[0]===P.ua)?`<option value="${esc(P.ua)}" selected>Eigener</option>`:''}</select></div>
     <div class="fld"><label for="uaOwn">Eigener User-Agent (optional)</label><input id="uaOwn" ${TXT} value="${UA_PRESETS.some(x=>x[0]===(P.ua||''))?'':esc(P.ua)}" placeholder="z. B. vom Anbieter vorgegeben"></div></div></div></section>`:''}
@@ -888,7 +923,7 @@ function renderSettings(){
     <kbd>G</kbd><span>TV-Guide</span><kbd>L</kbd><span>Live TV</span><kbd>F</kbd><span>Vollbild</span><kbd>S</kbd><span>Favorit umschalten</span></div></div></section>
   <section><h2>Daten</h2><div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="clearHist">Verlauf leeren</button><button class="btn danger" data-act="reset">${resetArm?'Wirklich alles löschen?':'Alles zurücksetzen'}</button></div>
     <p class="note">Aufnahmen auf Festplatte wie bei TiviMate sind nicht möglich. Catch-up funktioniert, wenn dein Anbieter Archive anbietet.</p>
-    <p class="note mono">OCMate Version ${APP_VER}${IN_APP?' · TV-App':' · Browser'}</p></div></section>`;
+    <p class="note mono">OCMate Version ${APP_VER}${IS_TIZEN?' · Samsung-App':IN_APP?' · TV-App':' · Browser'}</p></div></section>`;
 }
 async function onSettingsClick(e){
   const ab=e.target.closest('[data-add]');if(ab){addMode=ab.dataset.add;renderSettings();return}
@@ -911,6 +946,7 @@ async function onSettingsChange(e){
     if(!P.pin){t.checked=false;toast('Setze zuerst unten eine PIN.');return}
     if(!t.checked&&!(await askPin())){t.checked=true;return}
     t.checked?l.push(g):l.splice(l.indexOf(g),1);save();refreshAll()}
+  else if(t.id==='plySel'){P.player=t.value;save();avStop();toast('Player gespeichert. Sender neu starten.')}
   else if(t.id==='uaSel'||t.id==='uaOwn'){P.ua=t.id==='uaOwn'?t.value.trim():t.value;save();applyUA();renderSettings();toast('User-Agent gespeichert. Playlist mit „Neu laden“ erneut versuchen.')}
   else if(t.id==='eOff'){P.epgOffset=+t.value||0;save();if(S.epgText){applyEPG(S.epgText,S.epgInfo.label);epgPill();refreshAll()}else if(pl()&&pl().type==='demo')loadEPG(pl())}
   else if(t.id==='eFile'&&t.files[0]){S.epgInfo={state:'busy'};epgPill();try{const txt=await bufToText(new Uint8Array(await t.files[0].arrayBuffer()));S.epgText=txt;applyEPG(txt,t.files[0].name)}catch(err){S.epgInfo={state:'err',msg:String(err.message||err)}}epgPill();refreshAll();renderSettings()}
@@ -973,7 +1009,8 @@ function go(v){
   S.view=v;$$('.view').forEach(x=>x.classList.toggle('on',x.id===v));$$('.nav button').forEach(b=>b.setAttribute('aria-current',b.dataset.view===v));
   if(v==='guide')renderGuide();
   if(v==='settings')renderSettings();
-  if(v==='multi'){video.pause();renderMV()}
+  if(v==='multi'){video.pause();avStop();renderMV()}
+  if(v==='live')avResize();
 }
 function refreshAll(){keepFocus(()=>{renderGroups();renderChannels(true)});renderInfo();ctrlState();if(S.view==='guide')renderGuide()}
 function renderPlSel(){$('#plSel').innerHTML=P.playlists.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#plSel').value=P.activeId||''}
@@ -1020,7 +1057,7 @@ $('#bLast').onclick=()=>S.prev&&play(S.prev,{keepScroll:true});
 $('#bFav').onclick=()=>toggleFav(S.current);
 $('#bPip').onclick=async()=>{try{if(document.pictureInPictureElement)await document.exitPictureInPicture();else await video.requestPictureInPicture()}catch(e){toast('Bild-in-Bild wird hier nicht unterstützt.')}};
 const isFs=()=>document.body.classList.contains('fs');
-function setFs(on){document.body.classList.toggle('fs',on);video.controls=!on;if(on){const st=$('#stage');st.tabIndex=-1;st.focus({preventScroll:true});osdInfo()}else{const r=$('#chList .row.on');if(r)r.focus({preventScroll:true})}}
+function setFs(on){document.body.classList.toggle('fs',on);video.controls=!on;avResize();if(on){const st=$('#stage');st.tabIndex=-1;st.focus({preventScroll:true});osdInfo()}else{const r=$('#chList .row.on');if(r)r.focus({preventScroll:true})}}
 /* Kanal-Einblendung im Vollbild: Nummer, Name, was läuft und was danach kommt */
 function osdInfo(){const c=S.current;if(!c)return;const a=progsOf(c),i=nowIdx(a,Date.now()),p=S.catchup||a[i],n=S.catchup?null:a[i+1];
   osd(`<div class="ot"><span class="mono">${c.num}</span>${esc(c.name)}${S.catchup?' <span class="tag cu">Catch-up</span>':''}</div>${p?`<div class="op">${hm(p.start)}–${hm(p.stop)} <b>${esc(p.title)}</b></div>`:''}${n?`<div class="op">Danach ${hm(n.start)} ${esc(n.title)}</div>`:''}`,4000)}
@@ -1065,12 +1102,26 @@ window.ocBack=function(){
   return false;
 };
 
+/* Samsung-Fernbedienung: Tastencodes auf Namen abbilden, Zurück-Taste beendet zuletzt die App */
+const TIZEN_KEYS={427:'ChannelUp',428:'ChannelDown',458:'Guide',457:'Info',10009:'Back',10252:'MediaPlayPause',415:'MediaPlay',19:'MediaPause',413:'MediaStop',10190:'PreviousChannel'};
+if(IS_TIZEN){
+  try{['ChannelUp','ChannelDown','Guide','Info','MediaPlayPause','MediaPlay','MediaPause','MediaStop','PreviousChannel','0','1','2','3','4','5','6','7','8','9'].forEach(n=>{try{tizen.tvinputdevice.registerKey(n)}catch(e){}})}catch(e){}
+  document.addEventListener('keydown',e=>{const n=TIZEN_KEYS[e.keyCode];if(!n)return;
+    if(n==='Back'){e.preventDefault();e.stopImmediatePropagation();if(!ocBack()){avStop();try{tizen.application.getCurrentApplication().exit()}catch(x){}}return}
+    if(n==='Guide'){e.preventDefault();e.stopImmediatePropagation();go(S.view==='guide'?'live':'guide');return}
+    if(n==='Info'){e.preventDefault();e.stopImmediatePropagation();if(S.current){if(isFs())osdInfo();else fullscreen()}return}
+    if(n==='PreviousChannel'){e.preventDefault();e.stopImmediatePropagation();if(S.prev)play(S.prev,{keepScroll:true});return}
+  },true);
+  // Beim Wechsel in eine andere App den Player freigeben, beim Zurückkommen den Sender neu starten
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){avStop();stopVideo(video)}else if(S.current&&S.view==='live')play(S.current,{keepScroll:true,catchup:S.catchup})});
+  addEventListener('resize',avResize);
+}
 document.addEventListener('keydown',e=>{
   if(!$('#modal').hidden){if(e.key==='Escape')closeModal(null);else if(ARROWS.includes(e.key)&&!(e.target.tagName==='INPUT'&&(e.key==='ArrowLeft'||e.key==='ArrowRight'))){e.preventDefault();spatial(e.key)}return}
   const tag=(e.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='select'||tag==='textarea'){if(e.key==='Escape')e.target.blur();
     else if(ARROWS.includes(e.key)&&(tag==='select'||((e.key==='ArrowUp'||e.key==='ArrowDown')&&tag==='input'&&e.target.type!=='number'))){e.preventDefault();spatial(e.key)}return}
-  const k=e.key;
+  const k=(IS_TIZEN&&TIZEN_KEYS[e.keyCode])||e.key;
   if(/^[0-9]$/.test(k)&&S.view==='live'){S.numBuf=(S.numBuf+k).slice(-4);osd(`<span class="mono">${S.numBuf}_</span>`,0);clearTimeout(S.numTimer);
     S.numTimer=setTimeout(()=>{const n=+S.numBuf;S.numBuf='';const c=S.channels.find(x=>x.num===n&&!isHidden(x));if(c)play(c,{keepScroll:true});else osd(`<span class="mono">${n}</span> Kein Kanal`)},1500);return}
   if(isFs()){
@@ -1079,6 +1130,7 @@ document.addEventListener('keydown',e=>{
     if(k==='Enter'||k===' '||k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();osdInfo();return}
     if(k==='Escape'){setFs(false);return}
   }
+  if(k==='MediaStop'){avStop();stopVideo(video);return}
   if(k==='ChannelUp'||k==='PageUp'||k==='+'){e.preventDefault();zap(-1);return}
   if(k==='ChannelDown'||k==='PageDown'||k==='-'){e.preventDefault();zap(1);return}
   if(ARROWS.includes(k)){

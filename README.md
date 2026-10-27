@@ -61,3 +61,7 @@ Neue Version von `app/src/main/assets/ocmate.html` hochladen → GitHub baut aut
 - Kotlin, WebView, Android 5.0+ (minSdk 21), Leanback-Starter für TV
 - Netzwerk-Anfragen laufen über die App selbst. Dadurch funktionieren http-Streams und Server, die Browser blockieren (CORS).
 - Der Signaturschlüssel `app/ocmate.keystore` liegt bewusst im Projekt, damit jede neue Version sich über die alte installieren lässt. Für eine Veröffentlichung im Play Store bräuchte es einen eigenen, geheimen Schlüssel.
+
+## Samsung-Fernseher
+
+Samsung-Fernseher (Tizen) können keine APK installieren. Die Samsung-Version liegt im Ordner `samsung/`, Anleitung in `samsung/ANLEITUNG.md`.

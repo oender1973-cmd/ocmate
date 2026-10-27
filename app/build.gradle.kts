@@ -11,8 +11,8 @@ android {
         applicationId = "de.onder.ocmate"
         minSdk = 21
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
     }
 
     // Fester Schlüssel, damit spätere Versionen sich über die alte App installieren lassen.
