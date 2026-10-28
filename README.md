@@ -64,4 +64,7 @@ Neue Version von `app/src/main/assets/ocmate.html` hochladen → GitHub baut aut
 
 ## Samsung-Fernseher
 
-Samsung-Fernseher (Tizen) können keine APK installieren. Die Samsung-Version liegt im Ordner `samsung/`, Anleitung in `samsung/ANLEITUNG.md`.
+Samsung-Fernseher (Tizen) können keine APK installieren. Die Samsung-Version liegt im Ordner `samsung/`.
+
+- Einfach (ohne Tizen Studio): `samsung/ANLEITUNG-APPS2SAMSUNG.md` – Paket: https://github.com/oender1973-cmd/ocmate/releases/latest/download/OCMate.wgt
+- Mit Tizen Studio: `samsung/ANLEITUNG.md`

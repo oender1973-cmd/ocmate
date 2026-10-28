@@ -43,11 +43,19 @@ jobs:
       - name: APK umbenennen
         run: cp app/build/outputs/apk/release/app-release.apk OCMate.apk
 
+      # Samsung-Paket (unsigniert): Apps2Samsung signiert es beim Installieren mit dem eigenen Zertifikat
+      - name: Samsung-Paket (WGT) packen
+        run: cd samsung/app && zip -q -r -X ../../OCMate.wgt config.xml index.html icon.png hls.min.js mpegts.js
+
       - name: Als Download veröffentlichen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: OCMate
-          body: "Download für Downloader: https://github.com/${{ github.repository }}/releases/latest/download/OCMate.apk"
-          files: OCMate.apk
+          body: |
+            Android / Fire TV (Downloader): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.apk
+            Samsung (Apps2Samsung): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.wgt
+          files: |
+            OCMate.apk
+            OCMate.wgt
           make_latest: true
