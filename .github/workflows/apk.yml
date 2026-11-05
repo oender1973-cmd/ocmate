@@ -55,7 +55,49 @@ jobs:
           body: |
             Android / Fire TV (Downloader): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.apk
             Samsung (Apps2Samsung): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.wgt
+            iPhone (Sideloadly): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.ipa
           files: |
             OCMate.apk
             OCMate.wgt
+          make_latest: true
+
+  # iPhone: unsignierte IPA; Sideloadly signiert sie beim Installieren mit der eigenen Apple-ID
+  ios:
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Oberfläche übernehmen (dieselbe wie Android)
+        run: cp app/src/main/assets/ocmate.html app/src/main/assets/hls.min.js app/src/main/assets/mpegts.js ios/web/
+
+      - name: Xcode-Projekt erzeugen
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: App bauen (ohne Signatur)
+        run: |
+          cd ios
+          xcodebuild -project OCMate.xcodeproj -scheme OCMate -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+
+      - name: IPA packen
+        run: |
+          cd ios
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/OCMate.app Payload/
+          zip -qry ../OCMate.ipa Payload
+
+      - name: Als Download veröffentlichen
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          name: OCMate
+          body: |
+            Android / Fire TV (Downloader): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.apk
+            Samsung (Apps2Samsung): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.wgt
+            iPhone (Sideloadly): https://github.com/${{ github.repository }}/releases/latest/download/OCMate.ipa
+          files: OCMate.ipa
           make_latest: true

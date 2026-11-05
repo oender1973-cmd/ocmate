@@ -363,7 +363,8 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 const initials=n=>{const w=String(n).replace(/[\u0000-\u002F\u003A-\u0040\u005B-\u0060\u007B-\u00BF\u2000-\u2BFF\u3000-\u303F\uD800-\uDFFF\uFE00-\uFE0F]/g,' ').trim().split(/\s+/);return((w[0]||'?')[0]+((w[1]||'')[0]||(w[0]||'')[1]||'')).toUpperCase()};
 const uid=()=>Math.random().toString(36).slice(2,10);
 const IS_TIZEN=!!window.tizen;
-const IN_APP=location.hostname==='appassets.androidplatform.net'||IS_TIZEN;
+const IS_IOS_APP=location.protocol==='ocmate:';
+const IN_APP=location.hostname==='appassets.androidplatform.net'||IS_TIZEN||IS_IOS_APP;
 const APP_VER='1.9';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
@@ -622,12 +623,13 @@ function stopVideo(v){
 }
 /* MPEG-TS (.ts oder Xtream-Link ohne Endung) braucht mpegts.js; Browser spielen das nicht selbst */
 const isTsUrl=u=>/\.ts(\?|$)/i.test(u)||/\/\d+(\?|$)/.test(u)||/[?&](output|extension|type)=(ts|mpegts)/i.test(u);
-const canTs=()=>!!(window.mpegts&&mpegts.getFeatureList&&mpegts.getFeatureList().mseLivePlayback);
+const canTs=()=>!IS_IOS_APP&&!!(window.mpegts&&mpegts.getFeatureList&&mpegts.getFeatureList().mseLivePlayback);
 function playUrl(v,url,onErr,onReady){
   stopVideo(v);
   if(!IN_APP&&location.protocol==='https:'&&/^http:/i.test(url)){onErr('mixed');return}
   const isHls=/\.m3u8(\?|$)/i.test(url)||/[?&](type|output|extension)=(m3u8|hls)/i.test(url);
-  if(isHls&&window.Hls&&Hls.isSupported()){
+  const nativeHls=IS_IOS_APP&&!!v.canPlayType('application/vnd.apple.mpegurl');
+  if(isHls&&!nativeHls&&window.Hls&&Hls.isSupported()){
     const once={default:{maxTimeToFirstByteMs:12000,maxLoadTimeMs:20000,timeoutRetry:null,errorRetry:null}};
     // Keine automatischen Wiederholungen der Playlist: manche Anbieter vergeben Einmal-Links (Fehler 555 bei Doppelabruf)
     const h=new Hls({enableWorker:true,backBufferLength:30,maxBufferLength:30,manifestLoadPolicy:once,playlistLoadPolicy:{default:{maxTimeToFirstByteMs:10000,maxLoadTimeMs:20000,timeoutRetry:{maxNumRetry:2,retryDelayMs:0,maxRetryDelayMs:0},errorRetry:{maxNumRetry:1,retryDelayMs:1000,maxRetryDelayMs:8000}}}});v._hls=h;let tries=0;
@@ -645,7 +647,7 @@ function playUrl(v,url,onErr,onReady){
     t.attachMediaElement(v);t.load();
     try{const pr=t.play();if(pr&&pr.catch)pr.catch(()=>{})}catch(e){}
   }else{
-    v.src=url;v.onerror=()=>onErr(isTsUrl(url)?'ts':'media','Video-Fehler '+(v.error?v.error.code:''));
+    v.src=url;v.onerror=()=>onErr(v.error&&v.error.code===2?'net':isTsUrl(url)?'ts':'media','Video-Fehler '+(v.error?v.error.code:''));
     v.onloadedmetadata=()=>onReady&&onReady(null);v.play().catch(()=>{});
   }
 }
@@ -926,7 +928,7 @@ function renderSettings(){
     <kbd>G</kbd><span>TV-Guide</span><kbd>L</kbd><span>Live TV</span><kbd>F</kbd><span>Vollbild</span><kbd>S</kbd><span>Favorit umschalten</span></div></div></section>
   <section><h2>Daten</h2><div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="clearHist">Verlauf leeren</button><button class="btn danger" data-act="reset">${resetArm?'Wirklich alles löschen?':'Alles zurücksetzen'}</button></div>
     <p class="note">Aufnahmen auf Festplatte wie bei TiviMate sind nicht möglich. Catch-up funktioniert, wenn dein Anbieter Archive anbietet.</p>
-    <p class="note mono">OCMate Version ${APP_VER}${IS_TIZEN?' · Samsung-App':IN_APP?' · TV-App':' · Browser'}</p></div></section>`;
+    <p class="note mono">OCMate Version ${APP_VER}${IS_TIZEN?' · Samsung-App':IS_IOS_APP?' · iPhone-App':IN_APP?' · TV-App':' · Browser'}</p></div></section>`;
 }
 async function onSettingsClick(e){
   const ab=e.target.closest('[data-add]');if(ab){addMode=ab.dataset.add;renderSettings();return}
@@ -1058,13 +1060,16 @@ $('#bPrevCh').innerHTML=ic('up');$('#bNextCh').innerHTML=ic('down');$('#bLast').
 $('#bPrevCh').onclick=()=>zap(-1);$('#bNextCh').onclick=()=>zap(1);
 $('#bLast').onclick=()=>S.prev&&play(S.prev,{keepScroll:true});
 $('#bFav').onclick=()=>toggleFav(S.current);
-$('#bPip').onclick=async()=>{try{if(document.pictureInPictureElement)await document.exitPictureInPicture();else await video.requestPictureInPicture()}catch(e){toast('Bild-in-Bild wird hier nicht unterstützt.')}};
+$('#bPip').onclick=async()=>{try{
+  if(!video.requestPictureInPicture&&video.webkitSetPresentationMode){video.webkitSetPresentationMode(video.webkitPresentationMode==='picture-in-picture'?'inline':'picture-in-picture');return}
+  if(document.pictureInPictureElement)await document.exitPictureInPicture();else await video.requestPictureInPicture()}catch(e){toast('Bild-in-Bild wird hier nicht unterstützt.')}};
 const isFs=()=>document.body.classList.contains('fs');
 function setFs(on){document.body.classList.toggle('fs',on);video.controls=!on;avResize();if(on){const st=$('#stage');st.tabIndex=-1;st.focus({preventScroll:true});osdInfo()}else{const r=$('#chList .row.on');if(r)r.focus({preventScroll:true})}}
 /* Kanal-Einblendung im Vollbild: Nummer, Name, was läuft und was danach kommt */
 function osdInfo(){const c=S.current;if(!c)return;const a=progsOf(c),i=nowIdx(a,Date.now()),p=S.catchup||a[i],n=S.catchup?null:a[i+1];
   osd(`<div class="ot"><span class="mono">${c.num}</span>${esc(c.name)}${S.catchup?' <span class="tag cu">Catch-up</span>':''}</div>${p?`<div class="op">${hm(p.start)}–${hm(p.stop)} <b>${esc(p.title)}</b></div>`:''}${n?`<div class="op">Danach ${hm(n.start)} ${esc(n.title)}</div>`:''}`,4000)}
 function fullscreen(){
+  if(IS_IOS_APP&&video.webkitEnterFullscreen&&video.readyState>0){try{video.webkitEnterFullscreen();return}catch(e){}}
   if(IN_APP||!document.documentElement.requestFullscreen){setFs(!isFs());return}
   const st=$('#stage');try{if(document.fullscreenElement)document.exitFullscreen();else st.requestFullscreen()}catch(e){setFs(!isFs())}}
 $('#bFull').onclick=fullscreen;

@@ -68,3 +68,7 @@ Samsung-Fernseher (Tizen) können keine APK installieren. Die Samsung-Version li
 
 - Einfach (ohne Tizen Studio): `samsung/ANLEITUNG-APPS2SAMSUNG.md` – Paket: https://github.com/oender1973-cmd/ocmate/releases/latest/download/OCMate.wgt
 - Mit Tizen Studio: `samsung/ANLEITUNG.md`
+
+## iPhone
+
+Die iPhone-Version liegt im Ordner `ios/` (Swift, gleiche Oberfläche). GitHub baut daraus automatisch `OCMate.ipa`: https://github.com/oender1973-cmd/ocmate/releases/latest/download/OCMate.ipa – Installation mit Sideloadly, Anleitung in `ios/ANLEITUNG.md`.
