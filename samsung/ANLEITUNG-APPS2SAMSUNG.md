@@ -2,7 +2,7 @@
 
 Mit dem kostenlosen Programm **Apps2Samsung** (für Mac, iPhone und Android). Es installiert eigene Apps auf Samsung-Fernseher und erledigt das Zertifikat selbst.
 
-Voraussetzung: Samsung Smart TV mit Tizen (ab 2015), Mac bzw. Handy im selben WLAN wie der Fernseher.
+Voraussetzung: Samsung Smart TV ab Baujahr 2019 (Tizen 5.0 oder neuer), Mac bzw. Handy im selben WLAN wie der Fernseher.
 
 ## 1. OCMate-Datei laden
 Auf dem Mac (oder iPhone) herunterladen:

@@ -2,7 +2,7 @@
 
 Samsung-Fernseher laufen mit Tizen, nicht mit Android. Deshalb wird OCMate hier einmalig vom Mac auf den Fernseher übertragen. Teil A machst du nur beim ersten Mal, Teil B bei jeder neuen Version.
 
-Voraussetzung: Samsung Smart TV ab Baujahr 2017. Mac und Fernseher sind im selben WLAN bzw. Heimnetz.
+Voraussetzung: Samsung Smart TV ab Baujahr 2019 (Tizen 5.0 oder neuer). Mac und Fernseher sind im selben WLAN bzw. Heimnetz.
 
 ---
 
