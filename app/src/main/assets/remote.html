@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>OCMate einrichten</title>
+<style>
+/* Handy-Formular: eine Spalte, große Eingabefelder, gleiche Farben wie OCMate am Fernseher */
+:root{--bg:#0b0f14;--panel:#10171f;--raise:#17212c;--line:#213042;--fg:#e6ecf4;--muted:#8a98ad;--tally:#ffb020;--ink:#1b1303;--ok:#3ecf8e;--err:#ff4d5e;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  padding:24px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px))}
+main{max-width:480px;margin:0 auto}
+.brand{font-weight:800;font-size:26px;letter-spacing:.01em;margin:0 0 4px}
+.brand b{background:var(--tally);color:var(--ink);padding:0 6px;border-radius:5px;margin-right:2px}
+p.sub{color:var(--muted);margin:0 0 20px}
+.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px;margin-bottom:16px}
+.seg button{flex:1;background:none;border:0;color:var(--muted);font:inherit;font-weight:600;padding:10px;border-radius:7px}
+.seg button[aria-pressed="true"]{background:var(--raise);color:var(--fg)}
+label{display:block;font-size:14px;color:var(--muted);margin:14px 0 6px}
+input,select{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:9px;color:var(--fg);font:inherit;padding:13px 14px}
+input:focus,select:focus{outline:2px solid var(--tally);outline-offset:1px}
+.send{width:100%;margin-top:22px;background:var(--tally);color:var(--ink);border:0;border-radius:10px;font:inherit;font-weight:700;padding:15px}
+.send[disabled]{opacity:.6}
+.msg{margin-top:16px;padding:12px 14px;border-radius:9px;background:var(--panel);border:1px solid var(--line)}
+.msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1 class="brand"><b>OC</b>Mate</h1>
+  <p class="sub">Playlist eintragen und senden. Sie erscheint sofort auf dem Fernseher.</p>
+
+  <div class="seg" role="group" aria-label="Art der Playlist">
+    <button type="button" data-mode="xtream" aria-pressed="true">Xtream Codes</button>
+    <button type="button" data-mode="url" aria-pressed="false">M3U-Link</button>
+  </div>
+
+  <form id="f" novalidate>
+    <div data-for="xtream">
+      <label for="srv">Server-Adresse</label>
+      <input id="srv" name="srv" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="http://anbieter.tv:8080">
+      <label for="user">Benutzername</label>
+      <input id="user" name="user" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <label for="pass">Passwort</label>
+      <input id="pass" name="pass" type="password" autocapitalize="off" autocorrect="off">
+    </div>
+    <div data-for="url" hidden>
+      <label for="url">M3U-Link</label>
+      <input id="url" name="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="http://…/get.php?username=…">
+      <label for="epg">EPG-Link (optional)</label>
+      <input id="epg" name="epg" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+    <label for="name">Name (optional)</label>
+    <input id="name" name="name" placeholder="z. B. Mein Anbieter">
+    <button class="send" id="send" type="submit">An Fernseher senden</button>
+  </form>
+  <div class="msg" id="msg" hidden></div>
+</main>
+<script>
+(function(){
+  var mode='xtream';
+  var btns=document.querySelectorAll('[data-mode]');
+  function setMode(m){mode=m;
+    for(var i=0;i<btns.length;i++)btns[i].setAttribute('aria-pressed',btns[i].getAttribute('data-mode')===m?'true':'false');
+    var blocks=document.querySelectorAll('[data-for]');
+    for(var j=0;j<blocks.length;j++)blocks[j].hidden=blocks[j].getAttribute('data-for')!==m;}
+  for(var i=0;i<btns.length;i++)btns[i].onclick=function(){setMode(this.getAttribute('data-mode'))};
+
+  function val(id){return document.getElementById(id).value.trim()}
+  function show(t,k){var m=document.getElementById('msg');m.textContent=t;m.className='msg '+(k||'');m.hidden=false}
+
+  document.getElementById('f').onsubmit=function(e){e.preventDefault();
+    if(mode==='xtream'&&(!val('srv')||!val('user')||!val('pass'))){show('Bitte Server-Adresse, Benutzername und Passwort eintragen.','err');return}
+    if(mode==='url'&&!val('url')){show('Bitte den M3U-Link eintragen.','err');return}
+    var data={mode:mode,name:val('name'),url:val('url'),epg:val('epg'),srv:val('srv'),user:val('user'),pass:document.getElementById('pass').value,ext:'m3u8'};
+    var body=Object.keys(data).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(data[k])}).join('&');
+    var b=document.getElementById('send');b.disabled=true;b.textContent='Wird gesendet…';
+    var x=new XMLHttpRequest();
+    x.open('POST',location.pathname.replace(/\/$/,'')+'/add');
+    x.setRequestHeader('Content-Type','application/x-www-form-urlencoded');
+    x.onload=function(){
+      if(x.status===200){show('Gesendet. Die Playlist wird jetzt auf dem Fernseher geladen. Du kannst diese Seite schließen.','ok');document.getElementById('f').hidden=true}
+      else{b.disabled=false;b.textContent='An Fernseher senden';show('Der Fernseher hat nicht angenommen. Bitte den QR-Code am Fernseher neu öffnen und erneut scannen.','err')}};
+    x.onerror=function(){b.disabled=false;b.textContent='An Fernseher senden';show('Fernseher nicht erreichbar. Ist das Handy im selben WLAN, und ist das QR-Fenster am Fernseher noch offen?','err')};
+    x.send(body);
+  };
+})();
+</script>
+</body>
+</html>

@@ -72,3 +72,9 @@ Samsung-Fernseher (Tizen) können keine APK installieren. Die Samsung-Version li
 ## iPhone
 
 Die iPhone-Version liegt im Ordner `ios/` (Swift, gleiche Oberfläche). GitHub baut daraus automatisch `OCMate.ipa`: https://github.com/oender1973-cmd/ocmate/releases/latest/download/OCMate.ipa – Installation mit Sideloadly, Anleitung in `ios/ANLEITUNG.md`.
+
+## Neu in 2.0
+
+- **Länder:** Einstellungen → Länder. Ein Klick blendet alle Gruppen eines Landes aus (z. B. TR, FR, NL).
+- **Lieblingsgruppen:** Stern in Einstellungen → Gruppen oder Menü-Taste ☰ auf einer Gruppe. Diese stehen in der Live-Liste oben.
+- **Mit Handy einrichten (Fire TV / Android TV):** Einstellungen → Playlist hinzufügen → „Mit Handy einrichten (QR-Code)“. QR-Code scannen, Zugangsdaten am Handy eintippen, senden. Funktioniert nur im selben WLAN, ohne fremden Server.

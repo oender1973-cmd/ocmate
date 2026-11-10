@@ -11,6 +11,7 @@
 <script src="$WEBAPIS/webapis/webapis.js"></script>
 <script src="hls.min.js"></script>
 <script src="mpegts.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
 /* Layout: Sendezentrale — Kopfleiste, dann drei Spalten (Gruppen · Kanäle · Player). Mobil: Player oben, Gruppen als Chips, Kanalliste darunter. */
 :root{
@@ -91,6 +92,12 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
 .bar i{display:block;height:100%;background:var(--tally);border-radius:2px}
 .flags{display:flex;gap:4px;color:var(--dim)}
 .flags .fav{color:var(--tally)}
+.grp .fav{color:var(--tally)}
+.ctrys{display:flex;flex-wrap:wrap;gap:8px}
+.ctry{min-width:0}
+.ctry .cn{color:var(--muted);font-size:13px}
+.ctry[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
+.ctry[aria-pressed="mixed"]{border-style:dashed}
 .empty{padding:28px 18px;color:var(--muted);line-height:1.55}
 .empty b{color:var(--fg)}
 .sent{height:1px}
@@ -219,6 +226,12 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
 .keys{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px;color:var(--muted)}
 .keys kbd{font-family:var(--f-mono);font-size:12px;background:var(--raise);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:2px 7px;color:var(--fg);white-space:nowrap}
 .note{font-size:13px;color:var(--muted);line-height:1.5}
+.qrbox{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.qrbox .qr{background:#fff;border-radius:10px;padding:10px;width:220px;max-width:100%;flex:0 0 auto}
+.qrbox .qr svg{display:block;width:100%;height:auto}
+.qrbox ol{margin:0;padding-left:20px;color:var(--muted);line-height:1.6;flex:1;min-width:200px}
+.qrbox ol b{color:var(--fg)}
+.qrurl{font-family:var(--f-mono);font-size:15px;color:var(--tally);word-break:break-all}
 .addmsg{font-size:14px;line-height:1.5;padding:10px 12px;border-radius:7px;background:var(--bg);border:1px solid var(--line);word-break:break-word}
 .addmsg.err{color:var(--live);border-color:#5a2028}
 .addmsg.busy{color:var(--tally)}
@@ -365,7 +378,7 @@ const uid=()=>Math.random().toString(36).slice(2,10);
 const IS_TIZEN=!!window.tizen;
 const IS_IOS_APP=location.protocol==='ocmate:';
 const IN_APP=location.hostname==='appassets.androidplatform.net'||IS_TIZEN||IS_IOS_APP;
-const APP_VER='1.9';
+const APP_VER='2.0';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
@@ -387,7 +400,7 @@ const ic=(n,cls='')=>`<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="tr
 /* ---------- Speicher ---------- */
 const LS='ocmate.v1';
 function loadP(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return{}}}
-const P=Object.assign({playlists:[],activeId:null,fav:{},hist:{},hidden:{},locked:{},pin:'',epgOffset:0,last:{},xtExt:'m3u8'},loadP());
+const P=Object.assign({playlists:[],activeId:null,fav:{},favGroups:{},hist:{},hidden:{},locked:{},pin:'',epgOffset:0,last:{},xtExt:'m3u8'},loadP());
 function save(){try{localStorage.setItem(LS,JSON.stringify(P))}catch(e){toast('Speichern fehlgeschlagen. Browser-Speicher ist voll oder gesperrt.')}}
 function saveText(id,text){try{localStorage.setItem('ocmate.m3u.'+id,text);return true}catch(e){return false}}
 function loadText(id){try{return localStorage.getItem('ocmate.m3u.'+id)}catch(e){return null}}
@@ -478,6 +491,13 @@ function finalize(list){
   const g=new Map();list.forEach(c=>g.set(c.group,(g.get(c.group)||0)+1));
   S.groups=[...g].map(([name,count])=>({name,count}));
 }
+/* Länderkürzel am Anfang des Gruppennamens: „DE ❖ Sport“, „TR | Haber“, „|DE| News“, „[NL] Film“, „UK: BBC“ */
+const COUNTRY={DE:'Deutschland',AT:'Österreich',CH:'Schweiz',TR:'Türkei',UK:'Großbritannien',GB:'Großbritannien',US:'USA',USA:'USA',FR:'Frankreich',NL:'Niederlande',BE:'Belgien',IT:'Italien',ES:'Spanien',PT:'Portugal',PL:'Polen',RU:'Russland',UA:'Ukraine',GR:'Griechenland',RO:'Rumänien',BG:'Bulgarien',AL:'Albanien',EXYU:'Ex-Jugoslawien',YU:'Ex-Jugoslawien',HR:'Kroatien',RS:'Serbien',BA:'Bosnien',HU:'Ungarn',CZ:'Tschechien',SK:'Slowakei',SE:'Schweden',NO:'Norwegen',DK:'Dänemark',FI:'Finnland',AR:'Arabisch',ARA:'Arabisch',KU:'Kurdisch',KUR:'Kurdisch',IR:'Iran',IN:'Indien',PK:'Pakistan',AF:'Afghanistan',CA:'Kanada',AU:'Australien',BR:'Brasilien',MX:'Mexiko',LAT:'Lateinamerika',AFR:'Afrika',ASIA:'Asien',VIP:'VIP',PPV:'Pay-per-View'};
+function groupTag(n){const s=String(n).trim();
+  let m=s.match(/^[\[(|]\s*([A-Z][A-Z0-9]{1,3})\s*[\])|]/);
+  if(!m)m=s.match(/^([A-Z][A-Z0-9]{1,3})\s*(?:[:|\-\u2013\u2014]|[^\w\s.,'"()])/);
+  if(!m){const k=s.match(/^([A-Z]{2,4})\s+\S/);if(k&&COUNTRY[k[1]]&&k[1]!=='VIP'&&k[1]!=='PPV')m=k}
+  return m?m[1]:''}
 const isHidden=c=>arrOf(P.hidden,c.pid).includes(c.group);
 const isLockedGroup=(pid,g)=>arrOf(P.locked,pid).includes(g);
 const isLocked=c=>isLockedGroup(c.pid,c.group);
@@ -748,8 +768,11 @@ function renderGroups(){
   const pid=P.activeId,fav=arrOf(P.fav,pid).length,hist=arrOf(P.hist,pid).length;
   const b=(id,name,count,extra='')=>`<button class="grp" data-g="${esc(id)}" aria-current="${S.group===id&&!S.q}">${extra}<span class="gn">${esc(name)}</span><span class="gc">${count}</span></button>`;
   let h=b('__all','Alle Kanäle',S.channels.filter(c=>!isHidden(c)).length)+b('__fav','Favoriten',fav,ic('star','sm'))+b('__hist','Zuletzt gesehen',hist,ic('back','sm'));
-  const gs=S.groups.filter(g=>!arrOf(P.hidden,pid).includes(g.name));
-  if(gs.length)h+='<div class="gh">Gruppen</div>'+gs.map(g=>b(g.name,g.name,g.count,isLockedGroup(pid,g.name)?ic('lock','sm'):'')).join('');
+  const hid=arrOf(P.hidden,pid),fg=arrOf(P.favGroups,pid);
+  const gs=S.groups.filter(g=>!hid.includes(g.name)),favs=gs.filter(g=>fg.includes(g.name)),rest=gs.filter(g=>!fg.includes(g.name));
+  const gb=(g,star)=>b(g.name,g.name,g.count,(star?ic('star','fill fav sm'):'')+(isLockedGroup(pid,g.name)?ic('lock','sm'):''));
+  if(favs.length)h+='<div class="gh">Meine Gruppen</div>'+favs.map(g=>gb(g,true)).join('');
+  if(rest.length)h+='<div class="gh">'+(favs.length?'Weitere Gruppen':'Gruppen')+'</div>'+rest.map(g=>gb(g,false)).join('');
   $('#groups').innerHTML=h;
 }
 function logoHTML(c){return`<span class="logo">${esc(initials(c.name))}${c.logo?`<img src="${esc(c.logo)}" alt="" loading="lazy" onerror="this.remove()">`:''}</span>`}
@@ -876,6 +899,20 @@ function renderMV(){
 function stopMV(){$$('.slot video').forEach(v=>{if(v._key){stopVideo(v);v._key=null}})}
 
 /* ---------- Einstellungen ---------- */
+/* Länder-Schalter: alle Gruppen eines Kürzels auf einmal ein- oder ausblenden */
+function countryStats(){const pid=P.activeId,hid=arrOf(P.hidden,pid),m=new Map();
+  for(const g of S.groups){const t=groupTag(g.name);let e=m.get(t);if(!e)m.set(t,e={tag:t,groups:[],shown:0,ch:0});e.groups.push(g.name);e.ch+=g.count;if(!hid.includes(g.name))e.shown++}
+  return[...m.values()].sort((a,b)=>(a.tag===''?1:0)-(b.tag===''?1:0)||b.ch-a.ch)}
+function ctryHTML(){const st=countryStats();if(st.length<2)return'';
+  return`<section><h2>Länder</h2><p class="sub">Blende alle Gruppen eines Landes mit einem Klick aus, zum Beispiel Sprachen, die du nicht verstehst. Durchgestrichen heißt ausgeblendet.</p>
+    <div class="card"><div class="ctrys">${st.map(e=>{const pr=e.shown===0?'false':e.shown===e.groups.length?'true':'mixed';
+      return`<button class="btn ctry" data-ctry="${esc(e.tag)}" aria-pressed="${pr}"><b>${esc(e.tag||'Ohne Kürzel')}</b>${e.tag&&COUNTRY[e.tag]&&COUNTRY[e.tag]!==e.tag?` <span class="cn">${esc(COUNTRY[e.tag])}</span>`:''} <span class="cn mono">${e.groups.length}</span></button>`}).join('')}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="ctryAll">Alle einblenden</button></div></div></section>`}
+function setCountry(tag){const pid=P.activeId,h=arrOf(P.hidden,pid),e=countryStats().find(x=>x.tag===tag);if(!e)return;
+  const hide=e.shown>0;
+  for(const g of e.groups){const i=h.indexOf(g);if(hide&&i<0)h.push(g);if(!hide&&i>=0)h.splice(i,1)}
+  save();if(hide&&e.groups.includes(S.group))S.group='__all';renderGroups();renderChannels();
+  toast(`${tag||'Gruppen ohne Kürzel'}: ${e.groups.length} Gruppen ${hide?'ausgeblendet':'eingeblendet'}`)}
 let addMode='url',delArm=null,resetArm=false,addDraft=null,addMsg=null,adding=false;
 const TXT='autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"';
 function renderSettings(){
@@ -888,6 +925,7 @@ function renderSettings(){
   <section><h2>Playlists</h2><p class="sub">Zugangsdaten und Playlists bleiben nur in diesem Browser auf diesem Gerät gespeichert.</p><div class="card">${plRows}</div></section>
   <section><h2>Playlist hinzufügen</h2>
     <div class="card">
+      ${hasRemote()?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary" data-act="remote">Mit Handy einrichten (QR-Code)</button><span class="note">Zugangsdaten bequem am Handy oder PC eintippen.</span></div>`:''}
       <div class="seg" role="group" aria-label="Quelle">${[['url','M3U-Link'],['file','M3U-Datei'],['xtream','Xtream Codes']].map(([k,l])=>`<button data-add="${k}" aria-pressed="${addMode===k}">${l}</button>`).join('')}</div>
       <form id="addForm" class="card" style="background:transparent;border:0;padding:0" novalidate>
         <div class="fld"><label for="aName">Name (optional)</label><input id="aName" ${TXT} value="${esc(D.name||'')}" placeholder="z. B. Mein Anbieter"></div>
@@ -912,9 +950,10 @@ function renderSettings(){
   ${IN_APP?`<section><h2>Verbindung</h2><p class="sub">Manche Anbieter lassen nur bestimmte Player zu. Wenn eine Playlist nicht lädt, probiere hier einen anderen User-Agent und lade sie neu.</p>
     <div class="card"><div class="grid2"><div class="fld"><label for="uaSel">User-Agent</label><select id="uaSel">${UA_PRESETS.map(([v,l])=>`<option value="${esc(v)}" ${(P.ua||'')===v?'selected':''}>${esc(l)}</option>`).join('')}${P.ua&&!UA_PRESETS.some(x=>x[0]===P.ua)?`<option value="${esc(P.ua)}" selected>Eigener</option>`:''}</select></div>
     <div class="fld"><label for="uaOwn">Eigener User-Agent (optional)</label><input id="uaOwn" ${TXT} value="${UA_PRESETS.some(x=>x[0]===(P.ua||''))?'':esc(P.ua)}" placeholder="z. B. vom Anbieter vorgegeben"></div></div></div></section>`:''}
-  <section><h2>Gruppen</h2><p class="sub">Ausgeblendete Gruppen verschwinden aus Listen und Guide. Gesperrte Gruppen brauchen die PIN.</p>
-    <div class="tw"><table class="gtable"><thead><tr><th>Gruppe</th><th>Kanäle</th><th style="text-align:center">Ausblenden</th><th style="text-align:center">Sperren</th></tr></thead><tbody>
-    ${S.groups.map((g,i)=>`<tr><td>${esc(g.name)}</td><td class="mono">${g.count}</td><td class="c"><input type="checkbox" data-hide="${i}" ${hiddenPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} ausblenden"></td><td class="c"><input type="checkbox" data-lock="${i}" ${lockedPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} sperren"></td></tr>`).join('')||'<tr><td colspan="4">Keine Gruppen.</td></tr>'}
+  ${ctryHTML()}
+  <section><h2>Gruppen</h2><p class="sub">Mit Stern markierte Gruppen stehen in der Live-Liste ganz oben. Ausgeblendete Gruppen verschwinden aus Listen und Guide. Gesperrte Gruppen brauchen die PIN.</p>
+    <div class="tw"><table class="gtable"><thead><tr><th>Gruppe</th><th>Kanäle</th><th style="text-align:center">Favorit</th><th style="text-align:center">Ausblenden</th><th style="text-align:center">Sperren</th></tr></thead><tbody>
+    ${S.groups.map((g,i)=>`<tr><td>${esc(g.name)}</td><td class="mono">${g.count}</td><td class="c"><input type="checkbox" data-fgrp="${i}" ${arrOf(P.favGroups,pid).includes(g.name)?'checked':''} aria-label="${esc(g.name)} als Lieblingsgruppe"></td><td class="c"><input type="checkbox" data-hide="${i}" ${hiddenPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} ausblenden"></td><td class="c"><input type="checkbox" data-lock="${i}" ${lockedPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} sperren"></td></tr>`).join('')||'<tr><td colspan="5">Keine Gruppen.</td></tr>'}
     </tbody></table></div></section>
   <section><h2>Kindersicherung</h2>
     <div class="card"><p class="sub" style="margin:0">${P.pin?'PIN ist gesetzt.':'Noch keine PIN gesetzt. Ohne PIN lassen sich Gruppen nicht sperren.'}</p>
@@ -925,6 +964,7 @@ function renderSettings(){
     <kbd>Kanal +/− · Bild ↑/↓</kbd><span>Kanal wechseln</span>
     <kbd>0–9</kbd><span>Kanalnummer eingeben</span>
     ${IN_APP?'<kbd>Zurück</kbd><span>Fenster schließen, zurück zu Live TV, zuletzt App beenden</span><kbd>„Letzter“-Button</kbd><span>Zum vorherigen Kanal</span>':'<kbd>Zurück · ⌫</kbd><span>Zum vorherigen Kanal</span>'}
+    <kbd>Menü ☰</kbd><span>Sender als Favorit bzw. Gruppe als Lieblingsgruppe markieren</span>
     <kbd>G</kbd><span>TV-Guide</span><kbd>L</kbd><span>Live TV</span><kbd>F</kbd><span>Vollbild</span><kbd>S</kbd><span>Favorit umschalten</span></div></div></section>
   <section><h2>Daten</h2><div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="clearHist">Verlauf leeren</button><button class="btn danger" data-act="reset">${resetArm?'Wirklich alles löschen?':'Alles zurücksetzen'}</button></div>
     <p class="note">Aufnahmen auf Festplatte wie bei TiviMate sind nicht möglich. Catch-up funktioniert, wenn dein Anbieter Archive anbietet.</p>
@@ -932,21 +972,25 @@ function renderSettings(){
 }
 async function onSettingsClick(e){
   const ab=e.target.closest('[data-add]');if(ab){addMode=ab.dataset.add;renderSettings();return}
+  const cb=e.target.closest('[data-ctry]');if(cb){const t=cb.dataset.ctry;setCountry(t);renderSettings();const nb=$(`[data-ctry="${CSS.escape(t)}"]`);nb&&nb.focus({preventScroll:true});return}
   const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,id=b.dataset.id;
   if(a!=='del')delArm=null;if(a!=='reset')resetArm=false;
   if(a==='use'){await activate(id);go('live')}
   else if(a==='reload'){await activate(id);toast('Playlist neu geladen')}
-  else if(a==='del'){if(delArm!==id){delArm=id;renderSettings();return}delArm=null;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);['fav','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);
+  else if(a==='del'){if(delArm!==id){delArm=id;renderSettings();return}delArm=null;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);['fav','favGroups','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);
     if(P.activeId===id){P.activeId=P.playlists[0]?P.playlists[0].id:null;save();await activate(P.activeId)}else{save();renderPlSel();renderSettings()}}
   else if(a==='epgSave'){const p=pl();p.epgUrl=fixUrl($('#eUrl').value);save();loadEPG(p,true).then(renderSettings);renderSettings()}
   else if(a==='pinSet'){const v=$('#pinNew').value;if(!/^\d{4}$/.test(v)){toast('Die PIN muss aus 4 Ziffern bestehen.');return}if(P.pin&&!(await askPin('Aktuelle PIN eingeben')))return;P.pin=v;save();toast('PIN gespeichert');renderSettings()}
   else if(a==='relock'){S.unlocked=false;refreshAll();renderSettings();toast('Gesperrte Gruppen sind wieder gesperrt')}
+  else if(a==='remote'){openRemote()}
+  else if(a==='ctryAll'){P.hidden[P.activeId]=[];save();renderGroups();renderChannels();renderSettings();const nb=$('[data-act="ctryAll"]');nb&&nb.focus({preventScroll:true});toast('Alle Gruppen eingeblendet')}
   else if(a==='clearHist'){P.hist[P.activeId]=[];save();renderGroups();toast('Verlauf geleert')}
   else if(a==='reset'){if(!resetArm){resetArm=true;renderSettings();return}try{Object.keys(localStorage).filter(k=>k.startsWith('ocmate.')).forEach(k=>localStorage.removeItem(k))}catch(e){}location.reload()}
 }
 async function onSettingsChange(e){
   const t=e.target,pid=P.activeId;
-  if(t.dataset.hide!=null){const g=S.groups[+t.dataset.hide].name,h=arrOf(P.hidden,pid);t.checked?h.push(g):h.splice(h.indexOf(g),1);save();renderGroups();if(S.group===g)S.group='__all';renderChannels()}
+  if(t.dataset.fgrp!=null){const g=S.groups[+t.dataset.fgrp].name,f=arrOf(P.favGroups,pid);t.checked?f.push(g):f.splice(f.indexOf(g),1);save();renderGroups()}
+  else if(t.dataset.hide!=null){const g=S.groups[+t.dataset.hide].name,h=arrOf(P.hidden,pid);t.checked?h.push(g):h.splice(h.indexOf(g),1);save();renderGroups();if(S.group===g)S.group='__all';renderChannels()}
   else if(t.dataset.lock!=null){const g=S.groups[+t.dataset.lock].name,l=arrOf(P.locked,pid);
     if(!P.pin){t.checked=false;toast('Setze zuerst unten eine PIN.');return}
     if(!t.checked&&!(await askPin())){t.checked=true;return}
@@ -956,6 +1000,28 @@ async function onSettingsChange(e){
   else if(t.id==='eOff'){P.epgOffset=+t.value||0;save();if(S.epgText){applyEPG(S.epgText,S.epgInfo.label);epgPill();refreshAll()}else if(pl()&&pl().type==='demo')loadEPG(pl())}
   else if(t.id==='eFile'&&t.files[0]){S.epgInfo={state:'busy'};epgPill();try{const txt=await bufToText(new Uint8Array(await t.files[0].arrayBuffer()));S.epgText=txt;applyEPG(txt,t.files[0].name)}catch(err){S.epgInfo={state:'err',msg:String(err.message||err)}}epgPill();refreshAll();renderSettings()}
 }
+/* Einrichtung per Handy (nur Android-TV-App): Die App startet einen kleinen Webserver im Heimnetz,
+   der QR-Code führt das Handy zum Formular, die Daten kommen über ocRemoteAdd() zurück. */
+const hasRemote=()=>!!(window.OCNative&&OCNative.remoteStart);
+function qrSvg(text){try{const q=qrcode(0,'M');q.addData(text);q.make();return q.createSvgTag({cellSize:4,margin:2,scalable:true})}catch(e){return''}}
+function openRemote(){
+  let url='';try{url=OCNative.remoteStart()}catch(e){}
+  if(!url){toast('Kein WLAN oder Netzwerkkabel gefunden. Bitte den Fernseher mit dem Heimnetz verbinden.');return}
+  modalDone=()=>{try{OCNative.remoteStop()}catch(e){}};
+  openModal(`<h2>Mit Handy einrichten</h2>
+    <div class="qrbox"><div class="qr">${qrSvg(url)}</div>
+    <ol><li>Handy ins <b>selbe WLAN</b> wie den Fernseher.</li><li>QR-Code mit der <b>Handy-Kamera</b> scannen.</li><li>Zugangsdaten eintippen und <b>An Fernseher senden</b>.</li></ol></div>
+    <p>Ohne Kamera, z. B. am PC, diese Adresse im Browser öffnen:</p><div class="qrurl">${esc(url)}</div>
+    <p class="note">Die Daten gehen nur durch dein Heimnetz. Dieses Fenster bleibt offen, bis die Playlist ankommt.</p>
+    <div class="acts"><button class="btn" data-x>Schließen</button></div>`,m=>{$('[data-x]',m).onclick=()=>closeModal(null)});
+}
+window.ocRemoteAdd=function(d){
+  if(!d)return;closeModal(null);
+  addMode=d.mode==='url'?'url':'xtream';
+  addDraft={mode:addMode,name:d.name||'',url:d.url||'',epg:d.epg||'',srv:d.srv||'',user:d.user||'',pass:d.pass||'',ext:d.ext||'m3u8'};
+  addMsg=null;toast('Daten vom Handy empfangen');go('settings');
+  const f=$('#addForm');if(f)onAdd({preventDefault(){}});
+};
 /* Links ohne http:// ergänzen, Leerzeichen und Zeilenumbrüche aus der TV-Tastatur entfernen */
 function fixUrl(u){u=String(u||'').replace(/\s+/g,'');if(u&&!/^https?:\/\//i.test(u))u='http://'+u.replace(/^\/+/,'');return u}
 function hostName(u){try{return new URL(u).hostname}catch(e){return''}}
@@ -978,7 +1044,7 @@ async function onAdd(e){
   P.playlists.push(p);save();
   await activate(id);adding=false;
   if(S.loadErr){
-    const msg=S.loadErr;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);delete S.volatileText[id];['fav','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);save();
+    const msg=S.loadErr;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);delete S.volatileText[id];['fav','favGroups','hist','hidden','locked','last'].forEach(k=>delete P[k][id]);save();
     if(prev&&P.playlists.some(x=>x.id===prev))await activate(prev);else{P.activeId=P.playlists[0]?P.playlists[0].id:null;save();renderPlSel()}
     addMsg={t:'Nicht gespeichert: '+msg,k:'err'};renderSettings();const f=$('#aUrl')||$('#aSrv');f&&f.focus();return}
   addDraft=null;addMsg=null;addMode='url';
@@ -1054,6 +1120,12 @@ $('#chList').onclick=e=>{const r=e.target.closest('.row');if(!r)return;const c=S
   if(S.current===c&&!S.catchup&&$('#stageMsg').hidden){fullscreen();return}
   play(c,{zapList:S.list})};
 $('#chList').addEventListener('contextmenu',e=>{const r=e.target.closest('.row');if(!r)return;e.preventDefault();toggleFav(S.byKey.get(r.dataset.key))});
+function toggleFavGroup(g){if(!g||g.startsWith('__'))return;const f=arrOf(P.favGroups,P.activeId),i=f.indexOf(g);
+  if(i>=0){f.splice(i,1);toast(g+' aus „Meine Gruppen“ entfernt')}else{f.push(g);toast(g+' zu „Meine Gruppen“ hinzugefügt')}
+  save();keepFocus(renderGroups)}
+window.ocMenuKey=function(){const a=document.activeElement;if(!a)return;
+  if(a.matches('#chList .row'))toggleFav(S.byKey.get(a.dataset.key));else if(a.matches('.grp'))toggleFavGroup(a.dataset.g)};
+$('#groups').addEventListener('contextmenu',e=>{const g=e.target.closest('.grp');if(!g)return;e.preventDefault();toggleFavGroup(g.dataset.g)});
 $('#hits').onclick=e=>{const b=e.target.closest('[data-hit]');if(!b)return;const[c,p]=$('#hits')._hits[+b.dataset.hit];openProg(c,p)};
 $('#sched').onclick=e=>{const b=e.target.closest('[data-ps]');if(!b||!S.current)return;const p=progsOf(S.current)[+b.dataset.ps];if(p)openProg(S.current,p)};
 $('#bPrevCh').innerHTML=ic('up');$('#bNextCh').innerHTML=ic('down');$('#bLast').innerHTML=ic('back')+' Letzter';$('#bPip').innerHTML=ic('pip');$('#bFull').innerHTML=ic('full');
@@ -1139,6 +1211,7 @@ document.addEventListener('keydown',e=>{
     if(k==='Escape'){setFs(false);return}
   }
   if(k==='MediaStop'){avStop();stopVideo(video);return}
+  if(k==='ContextMenu'){e.preventDefault();ocMenuKey();return}
   if(k==='ChannelUp'||k==='PageUp'||k==='+'){e.preventDefault();zap(-1);return}
   if(k==='ChannelDown'||k==='PageDown'||k==='-'){e.preventDefault();zap(1);return}
   if(ARROWS.includes(k)){

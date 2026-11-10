@@ -45,7 +45,18 @@ class MainActivity : Activity() {
     // (sonst zählt der Anbieter zwei gleichzeitige Verbindungen und sperrt).
     private val openStreams = java.util.Collections.synchronizedSet(HashSet<HttpURLConnection>())
 
+    // Einrichtung per Handy: Formular im Heimnetz, Daten gehen direkt an die Oberfläche
+    private val remote by lazy {
+        RemoteServer(this) { json -> runOnUiThread { js("window.ocRemoteAdd&&ocRemoteAdd($json)") } }
+    }
+
     inner class Bridge {
+        @JavascriptInterface
+        fun remoteStart(): String = remote.start()
+
+        @JavascriptInterface
+        fun remoteStop() = remote.stop()
+
         @JavascriptInterface
         fun setUserAgent(ua: String?) {
             customUa = ua?.trim() ?: ""
@@ -254,6 +265,7 @@ class MainActivity : Activity() {
                 KeyEvent.KEYCODE_CHANNEL_DOWN -> { js("zap(1)"); return true }
                 KeyEvent.KEYCODE_GUIDE -> { js("go('guide')"); return true }
                 KeyEvent.KEYCODE_LAST_CHANNEL -> { js("S.prev&&play(S.prev,{keepScroll:true})"); return true }
+                KeyEvent.KEYCODE_MENU -> { js("window.ocMenuKey&&ocMenuKey()"); return true }
             }
         }
         return super.dispatchKeyEvent(event)
@@ -287,6 +299,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        remote.stop()
         web.destroy()
         super.onDestroy()
     }

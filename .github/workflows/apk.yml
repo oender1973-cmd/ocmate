@@ -69,7 +69,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Oberfläche übernehmen (dieselbe wie Android)
-        run: cp app/src/main/assets/ocmate.html app/src/main/assets/hls.min.js app/src/main/assets/mpegts.js ios/web/
+        run: cp app/src/main/assets/ocmate.html app/src/main/assets/hls.min.js app/src/main/assets/mpegts.js app/src/main/assets/qrcode.js ios/web/
 
       - name: Xcode-Projekt erzeugen
         run: |
