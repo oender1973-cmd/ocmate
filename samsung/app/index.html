@@ -54,7 +54,9 @@ img{max-width:100%}
 .search .ic{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);width:17px;height:17px}
 .pill{font-family:var(--f-mono);font-size:12px;padding:4px 8px;border-radius:999px;background:var(--raise);color:var(--muted);white-space:nowrap;border:1px solid var(--line)}
 .pill.ok{color:var(--ok)} .pill.busy{color:var(--tally)} .pill.err{color:var(--live)}
-select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:7px 8px;max-width:170px}
+.plsel{background:var(--raise);border:1px solid var(--line);border-radius:8px;padding:7px 10px;max-width:220px;color:var(--fg);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.plsel .pl-n{overflow:hidden;text-overflow:ellipsis}
+.plsel .pl-k{color:var(--muted);font-size:12px}
 
 /* Ansichten */
 .view{display:none}
@@ -94,6 +96,11 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
 .flags .fav{color:var(--tally)}
 .grp .fav{color:var(--tally)}
 .ctrys{display:flex;flex-wrap:wrap;gap:8px}
+.srcs{display:flex;flex-direction:column;gap:8px}
+.src{justify-content:space-between;width:100%;padding:12px 14px;text-align:left}
+.src .src-n{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.src .cn{color:var(--muted);font-size:13px;flex:0 0 auto}
+.src.on{border-color:var(--tally)}
 .ctry{min-width:0}
 .ctry .cn{color:var(--muted);font-size:13px}
 .ctry[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
@@ -252,7 +259,7 @@ select.plsel{background:var(--raise);border:1px solid var(--line);border-radius:
   .hdr{flex-wrap:wrap;padding-top:8px;padding-bottom:8px;row-gap:8px}
   .brand{flex:0 0 auto}
   .hdr-right{display:contents}
-  select.plsel{order:1;margin-left:auto}
+  .plsel{order:1;margin-left:auto}
   #epgPill{order:2}
   .nav{order:3;width:100%}
   .search{order:4;width:100%}
@@ -296,7 +303,7 @@ body.fs .osd{top:auto;bottom:calc(28px + env(safe-area-inset-bottom,0px));left:5
   </nav>
   <div class="hdr-right">
     <label class="search"><svg class="ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="q" type="search" placeholder="Kanal oder Sendung suchen" autocomplete="off"></label>
-    <select id="plSel" class="plsel" aria-label="Playlist"></select>
+    <button id="plSel" class="plsel" type="button" aria-label="Quelle wechseln"></button>
     <span id="epgPill" class="pill">EPG –</span>
   </div>
 </header>
@@ -378,7 +385,7 @@ const uid=()=>Math.random().toString(36).slice(2,10);
 const IS_TIZEN=!!window.tizen;
 const IS_IOS_APP=location.protocol==='ocmate:';
 const IN_APP=location.hostname==='appassets.androidplatform.net'||IS_TIZEN||IS_IOS_APP;
-const APP_VER='2.0';
+const APP_VER='2.1';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
@@ -386,6 +393,7 @@ function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUse
 const I={
   up:'<path d="M6 15l6-6 6 6"/>',down:'<path d="M6 9l6 6 6-6"/>',left:'<path d="M15 6l-6 6 6 6"/>',right:'<path d="M9 6l6 6-6 6"/>',
   back:'<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/>',
   star:'<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
   pip:'<rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/>',
   full:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
@@ -767,7 +775,8 @@ function groupLabel(){if(S.q)return'Suche: „'+S.q+'“';return{__all:'Alle Kan
 function renderGroups(){
   const pid=P.activeId,fav=arrOf(P.fav,pid).length,hist=arrOf(P.hist,pid).length;
   const b=(id,name,count,extra='')=>`<button class="grp" data-g="${esc(id)}" aria-current="${S.group===id&&!S.q}">${extra}<span class="gn">${esc(name)}</span><span class="gc">${count}</span></button>`;
-  let h=b('__all','Alle Kanäle',S.channels.filter(c=>!isHidden(c)).length)+b('__fav','Favoriten',fav,ic('star','sm'))+b('__hist','Zuletzt gesehen',hist,ic('back','sm'));
+  const cs=countryStats(),off=cs.filter(e=>e.shown===0).length;
+  let h=(cs.length>=2?`<button class="grp" data-g="__ctry">${ic('globe','sm')}<span class="gn">Länder filtern</span><span class="gc">${off?off+' aus':''}</span></button>`:'')+b('__all','Alle Kanäle',S.channels.filter(c=>!isHidden(c)).length)+b('__fav','Favoriten',fav,ic('star','sm'))+b('__hist','Zuletzt gesehen',hist,ic('back','sm'));
   const hid=arrOf(P.hidden,pid),fg=arrOf(P.favGroups,pid);
   const gs=S.groups.filter(g=>!hid.includes(g.name)),favs=gs.filter(g=>fg.includes(g.name)),rest=gs.filter(g=>!fg.includes(g.name));
   const gb=(g,star)=>b(g.name,g.name,g.count,(star?ic('star','fill fav sm'):'')+(isLockedGroup(pid,g.name)?ic('lock','sm'):''));
@@ -903,15 +912,44 @@ function stopMV(){$$('.slot video').forEach(v=>{if(v._key){stopVideo(v);v._key=n
 function countryStats(){const pid=P.activeId,hid=arrOf(P.hidden,pid),m=new Map();
   for(const g of S.groups){const t=groupTag(g.name);let e=m.get(t);if(!e)m.set(t,e={tag:t,groups:[],shown:0,ch:0});e.groups.push(g.name);e.ch+=g.count;if(!hid.includes(g.name))e.shown++}
   return[...m.values()].sort((a,b)=>(a.tag===''?1:0)-(b.tag===''?1:0)||b.ch-a.ch)}
-function ctryHTML(){const st=countryStats();if(st.length<2)return'';
-  return`<section><h2>Länder</h2><p class="sub">Blende alle Gruppen eines Landes mit einem Klick aus, zum Beispiel Sprachen, die du nicht verstehst. Durchgestrichen heißt ausgeblendet.</p>
-    <div class="card"><div class="ctrys">${st.map(e=>{const pr=e.shown===0?'false':e.shown===e.groups.length?'true':'mixed';
-      return`<button class="btn ctry" data-ctry="${esc(e.tag)}" aria-pressed="${pr}"><b>${esc(e.tag||'Ohne Kürzel')}</b>${e.tag&&COUNTRY[e.tag]&&COUNTRY[e.tag]!==e.tag?` <span class="cn">${esc(COUNTRY[e.tag])}</span>`:''} <span class="cn mono">${e.groups.length}</span></button>`}).join('')}</div>
+function ctryChips(){return countryStats().map(e=>{const pr=e.shown===0?'false':e.shown===e.groups.length?'true':'mixed';
+      return`<button class="btn ctry" data-ctry="${esc(e.tag)}" aria-pressed="${pr}"><b>${esc(e.tag||'Ohne Kürzel')}</b>${e.tag&&COUNTRY[e.tag]&&COUNTRY[e.tag]!==e.tag?` <span class="cn">${esc(COUNTRY[e.tag])}</span>`:''} <span class="cn mono">${e.groups.length}</span></button>`}).join('')}
+function ctryHTML(){if(countryStats().length<2)return'';
+  return`<section><h2>Länder</h2><p class="sub">Blende alle Gruppen eines Landes mit einem Klick aus, zum Beispiel Sprachen, die du nicht verstehst. Durchgestrichen heißt ausgeblendet. Auch direkt in Live TV unter „Länder filtern“.</p>
+    <div class="card"><div class="ctrys">${ctryChips()}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="ctryAll">Alle einblenden</button></div></div></section>`}
+/* Länder-Fenster direkt aus Live TV */
+function openCountries(){
+  const draw=m=>{m.querySelector('.ctrys').innerHTML=ctryChips()};
+  openModal(`<h2>Länder filtern</h2><p>Länder antippen, die du ausblenden möchtest. Durchgestrichen heißt ausgeblendet.</p>
+    <div class="ctrys">${ctryChips()}</div>
+    <div class="acts"><button class="btn" data-all>Alle einblenden</button><button class="btn primary" data-x>Fertig</button></div>`,m=>{
+    m.addEventListener('click',e=>{
+      const cb=e.target.closest('[data-ctry]');
+      if(cb){const t=cb.dataset.ctry;setCountry(t);draw(m);const nb=m.querySelector(`[data-ctry="${CSS.escape(t)}"]`);nb&&nb.focus({preventScroll:true});return}
+      if(e.target.closest('[data-all]')){P.hidden[P.activeId]=[];save();renderGroups();renderChannels();draw(m);toast('Alle Gruppen eingeblendet');return}
+      if(e.target.closest('[data-x]'))closeModal(null)});
+    const f=m.querySelector('[data-ctry]');f&&f.focus({preventScroll:true})});
+}
+/* Quelle wechseln: alle Playlists als große Knöpfe, plus neue Quelle hinzufügen */
+function openSources(){
+  const rows=P.playlists.map(p=>{const kind=p.type==='xtream'?'Xtream':p.type==='file'?'M3U-Datei':p.type==='demo'?'Demo':'M3U-Link';
+    return`<button class="btn src${p.id===P.activeId?' on':''}" data-src="${esc(p.id)}"><span class="src-n">${esc(p.name)}</span><span class="cn">${kind}${p.id===P.activeId?' · aktiv':''}</span></button>`}).join('');
+  openModal(`<h2>Quelle wechseln</h2><p>Jede Quelle behält ihre eigenen Favoriten, Länder- und Gruppen-Einstellungen.</p>
+    <div class="srcs">${rows}</div>
+    <div class="acts"><button class="btn" data-new>+ Neue Quelle hinzufügen</button><button class="btn" data-x>Schließen</button></div>`,m=>{
+    m.addEventListener('click',async e=>{
+      const sb=e.target.closest('[data-src]');
+      if(sb){const id=sb.dataset.src;closeModal(null);if(id!==P.activeId){await activate(id);toast('Quelle gewechselt: '+(pl()?pl().name:''))}go('live');return}
+      if(e.target.closest('[data-new]')){closeModal(null);addMode='url';addDraft=null;addMsg=null;go('settings');
+        const sec=$('#addForm');if(sec){sec.scrollIntoView({block:'center'});const f=$('#aUrl');f&&f.focus({preventScroll:true})}return}
+      if(e.target.closest('[data-x]'))closeModal(null)});
+    const f=m.querySelector('.src.on')||m.querySelector('[data-src]');f&&f.focus({preventScroll:true})});
+}
 function setCountry(tag){const pid=P.activeId,h=arrOf(P.hidden,pid),e=countryStats().find(x=>x.tag===tag);if(!e)return;
   const hide=e.shown>0;
   for(const g of e.groups){const i=h.indexOf(g);if(hide&&i<0)h.push(g);if(!hide&&i>=0)h.splice(i,1)}
-  save();if(hide&&e.groups.includes(S.group))S.group='__all';renderGroups();renderChannels();
+  save();if(hide&&e.groups.includes(S.group))S.group='__all';keepFocus(renderGroups);renderChannels();
   toast(`${tag||'Gruppen ohne Kürzel'}: ${e.groups.length} Gruppen ${hide?'ausgeblendet':'eingeblendet'}`)}
 let addMode='url',delArm=null,resetArm=false,addDraft=null,addMsg=null,adding=false;
 const TXT='autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"';
@@ -922,8 +960,9 @@ function renderSettings(){
   const lockedPid=arrOf(P.locked,pid),hiddenPid=arrOf(P.hidden,pid);
   const epgState=e.state==='ok'?`${e.matched} von ${S.channels.length} Kanälen zugeordnet · ${e.progs.toLocaleString('de-DE')} Sendungen · geladen ${hm(e.at)}`:e.state==='busy'?'Wird geladen…':e.state==='err'?'Fehler: '+esc(e.msg):'Kein EPG geladen.';
   $('#set').innerHTML=`
-  <section><h2>Playlists</h2><p class="sub">Zugangsdaten und Playlists bleiben nur in diesem Browser auf diesem Gerät gespeichert.</p><div class="card">${plRows}</div></section>
-  <section><h2>Playlist hinzufügen</h2>
+  <section><h2>Quellen</h2><p class="sub">Mehrere Playlists sind möglich. Wechseln geht oben über „Quelle“. Zugangsdaten bleiben nur auf diesem Gerät.</p><div class="card">${plRows}</div></section>
+  ${ctryHTML()}
+  <section><h2>Quelle hinzufügen</h2>
     <div class="card">
       ${hasRemote()?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn primary" data-act="remote">Mit Handy einrichten (QR-Code)</button><span class="note">Zugangsdaten bequem am Handy oder PC eintippen.</span></div>`:''}
       <div class="seg" role="group" aria-label="Quelle">${[['url','M3U-Link'],['file','M3U-Datei'],['xtream','Xtream Codes']].map(([k,l])=>`<button data-add="${k}" aria-pressed="${addMode===k}">${l}</button>`).join('')}</div>
@@ -950,7 +989,6 @@ function renderSettings(){
   ${IN_APP?`<section><h2>Verbindung</h2><p class="sub">Manche Anbieter lassen nur bestimmte Player zu. Wenn eine Playlist nicht lädt, probiere hier einen anderen User-Agent und lade sie neu.</p>
     <div class="card"><div class="grid2"><div class="fld"><label for="uaSel">User-Agent</label><select id="uaSel">${UA_PRESETS.map(([v,l])=>`<option value="${esc(v)}" ${(P.ua||'')===v?'selected':''}>${esc(l)}</option>`).join('')}${P.ua&&!UA_PRESETS.some(x=>x[0]===P.ua)?`<option value="${esc(P.ua)}" selected>Eigener</option>`:''}</select></div>
     <div class="fld"><label for="uaOwn">Eigener User-Agent (optional)</label><input id="uaOwn" ${TXT} value="${UA_PRESETS.some(x=>x[0]===(P.ua||''))?'':esc(P.ua)}" placeholder="z. B. vom Anbieter vorgegeben"></div></div></div></section>`:''}
-  ${ctryHTML()}
   <section><h2>Gruppen</h2><p class="sub">Mit Stern markierte Gruppen stehen in der Live-Liste ganz oben. Ausgeblendete Gruppen verschwinden aus Listen und Guide. Gesperrte Gruppen brauchen die PIN.</p>
     <div class="tw"><table class="gtable"><thead><tr><th>Gruppe</th><th>Kanäle</th><th style="text-align:center">Favorit</th><th style="text-align:center">Ausblenden</th><th style="text-align:center">Sperren</th></tr></thead><tbody>
     ${S.groups.map((g,i)=>`<tr><td>${esc(g.name)}</td><td class="mono">${g.count}</td><td class="c"><input type="checkbox" data-fgrp="${i}" ${arrOf(P.favGroups,pid).includes(g.name)?'checked':''} aria-label="${esc(g.name)} als Lieblingsgruppe"></td><td class="c"><input type="checkbox" data-hide="${i}" ${hiddenPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} ausblenden"></td><td class="c"><input type="checkbox" data-lock="${i}" ${lockedPid.includes(g.name)?'checked':''} aria-label="${esc(g.name)} sperren"></td></tr>`).join('')||'<tr><td colspan="5">Keine Gruppen.</td></tr>'}
@@ -1053,7 +1091,7 @@ async function onAdd(e){
 
 /* ---------- Modal, PIN, Auswahl ---------- */
 let modalDone=null;
-function openModal(html,mount){const m=$('#modal');m.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;m.hidden=false;mount&&mount(m);const f=m.querySelector('input,button.primary,button');f&&f.focus()}
+function openModal(html,mount){const m=$('#modal');m.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;m.hidden=false;mount&&mount(m);if(!m.contains(document.activeElement)){const f=m.querySelector('input,button.primary,button');f&&f.focus()}}
 function closeModal(v){const m=$('#modal');m.hidden=true;m.innerHTML='';if(modalDone){const d=modalDone;modalDone=null;d(v)}}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal(null)});
 function askPin(title='PIN eingeben'){
@@ -1084,7 +1122,7 @@ function go(v){
   if(v==='live')avResize();
 }
 function refreshAll(){keepFocus(()=>{renderGroups();renderChannels(true)});renderInfo();ctrlState();if(S.view==='guide')renderGuide()}
-function renderPlSel(){$('#plSel').innerHTML=P.playlists.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');$('#plSel').value=P.activeId||''}
+function renderPlSel(){const p=pl();$('#plSel').innerHTML=`<span class="pl-k">Quelle</span><span class="pl-n">${esc(p?p.name:'–')}</span>${ic('down','sm')}`}
 
 async function activate(id){
   P.activeId=id;save();renderPlSel();
@@ -1108,9 +1146,10 @@ async function activate(id){
 
 /* ---------- Ereignisse ---------- */
 $$('.nav button').forEach(b=>b.onclick=()=>go(b.dataset.view));
-$('#plSel').onchange=e=>activate(e.target.value);
+$('#plSel').onclick=openSources;
 let qT=null;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.q=e.target.value.trim();if(S.view!=='live')go('live');renderGroups();renderChannels()},200)});
 $('#groups').onclick=async e=>{const b=e.target.closest('.grp');if(!b)return;const g=b.dataset.g;
+  if(g==='__ctry'){openCountries();return}
   if(!g.startsWith('__')&&isLockedGroup(P.activeId,g)&&!S.unlocked&&!(await askPin()))return;
   S.group=g;S.q='';$('#q').value='';
   const gs=$('#groups').scrollTop;renderGroups();$('#groups').scrollTop=gs;renderChannels();if(innerWidth>=900)$('#chCol').scrollTop=0;

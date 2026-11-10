@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="http://onder.de/OCMate" version="2.0.0" viewmodes="fullscreen">
+<widget xmlns:tizen="http://tizen.org/ns/widgets" xmlns="http://www.w3.org/ns/widgets" id="http://onder.de/OCMate" version="2.1.0" viewmodes="fullscreen">
     <!-- Zugriff auf alle Server (Playlist, EPG, Logos, Streams) -->
     <access origin="*" subdomains="true"></access>
     <tizen:application id="OCMateTV01.OCMate" package="OCMateTV01" required_version="5.0"/>
