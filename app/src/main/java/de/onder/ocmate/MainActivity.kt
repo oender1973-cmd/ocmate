@@ -2,6 +2,7 @@ package de.onder.ocmate
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -32,6 +33,8 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
     private lateinit var chrome: WebChromeClient
+    private lateinit var player: NativePlayer
+    private var resumePlayer = false
     private var fullView: View? = null
     private var fullCallback: WebChromeClient.CustomViewCallback? = null
 
@@ -47,7 +50,11 @@ class MainActivity : Activity() {
 
     // Einrichtung per Handy: Formular im Heimnetz, Daten gehen direkt an die Oberfläche
     private val remote by lazy {
-        RemoteServer(this) { json -> runOnUiThread { js("window.ocRemoteAdd&&ocRemoteAdd($json)") } }
+        RemoteServer(
+            this,
+            { json -> runOnUiThread { js("window.ocRemoteAdd&&ocRemoteAdd($json)") } },
+            { backup -> runOnUiThread { js("window.ocRemoteRestore&&ocRemoteRestore(${org.json.JSONObject.quote(backup)})") } }
+        )
     }
 
     inner class Bridge {
@@ -56,6 +63,46 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun remoteStop() = remote.stop()
+
+        @JavascriptInterface
+        fun remoteSetBackup(json: String?) {
+            remote.backup = json ?: ""
+        }
+
+        // --- Android-Player (ExoPlayer) ---
+        @JavascriptInterface
+        fun playerPlay(id: Int, url: String, userAgent: String?, startMs: Double) {
+            val ua = userAgent?.trim().orEmpty().ifEmpty { playerUa }
+            player.play(id, url, ua, startMs.toLong())
+        }
+
+        @JavascriptInterface
+        fun playerStop() {
+            player.stop()
+        }
+
+        @JavascriptInterface
+        fun playerRect(x: Int, y: Int, w: Int, h: Int) {
+            player.setRect(x, y, w, h)
+        }
+
+        @JavascriptInterface
+        fun playerPause(pause: Boolean) {
+            player.pause(pause)
+        }
+
+        @JavascriptInterface
+        fun playerSeek(ms: Double) {
+            player.seek(ms.toLong())
+        }
+
+        @JavascriptInterface
+        fun playerState(): String = player.state
+
+        @JavascriptInterface
+        fun playerTrack(kind: String, groupIndex: Int, trackIndex: Int) {
+            player.selectTrack(kind, groupIndex, trackIndex)
+        }
 
         @JavascriptInterface
         fun setUserAgent(ua: String?) {
@@ -85,6 +132,10 @@ class MainActivity : Activity() {
         root = FrameLayout(this)
         web = WebView(this)
         root.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // Oberfläche durchsichtig: Das Videobild des Android-Players liegt dahinter
+        root.setBackgroundColor(Color.rgb(11, 15, 20))
+        web.setBackgroundColor(Color.TRANSPARENT)
+        player = NativePlayer(this, root) { code -> js(code) }
         setContentView(root)
 
         val assets = WebViewAssetLoader.Builder()
@@ -266,6 +317,11 @@ class MainActivity : Activity() {
                 KeyEvent.KEYCODE_GUIDE -> { js("go('guide')"); return true }
                 KeyEvent.KEYCODE_LAST_CHANNEL -> { js("S.prev&&play(S.prev,{keepScroll:true})"); return true }
                 KeyEvent.KEYCODE_MENU -> { js("window.ocMenuKey&&ocMenuKey()"); return true }
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    js("window.ocMediaKey&&ocMediaKey('pp')"); return true
+                }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { js("window.ocMediaKey&&ocMediaKey('ff')"); return true }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> { js("window.ocMediaKey&&ocMediaKey('rw')"); return true }
             }
         }
         return super.dispatchKeyEvent(event)
@@ -298,7 +354,25 @@ class MainActivity : Activity() {
         web.onResume()
     }
 
+    // App im Hintergrund (Home-Taste): Stream beenden, damit die Verbindung beim Anbieter frei wird
+    override fun onStop() {
+        if (player.active) {
+            resumePlayer = true
+            player.stop()
+        }
+        super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (resumePlayer) {
+            resumePlayer = false
+            js("window.ocResume&&ocResume()")
+        }
+    }
+
     override fun onDestroy() {
+        player.stop()
         remote.stop()
         web.destroy()
         super.onDestroy()

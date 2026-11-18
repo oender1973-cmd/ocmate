@@ -23,6 +23,8 @@ input,select{width:100%;background:var(--panel);border:1px solid var(--line);bor
 input:focus,select:focus{outline:2px solid var(--tally);outline-offset:1px}
 .send{width:100%;margin-top:22px;background:var(--tally);color:var(--ink);border:0;border-radius:10px;font:inherit;font-weight:700;padding:15px}
 .send[disabled]{opacity:.6}
+.h2{font-size:19px;margin:34px 0 4px}
+.send.ghost{display:block;text-align:center;text-decoration:none;background:var(--panel);color:var(--fg);border:1px solid var(--line);margin-top:12px}
 .msg{margin-top:16px;padding:12px 14px;border-radius:9px;background:var(--panel);border:1px solid var(--line)}
 .msg.ok{color:var(--ok)}.msg.err{color:var(--err)}
 [hidden]{display:none!important}
@@ -58,6 +60,13 @@ input:focus,select:focus{outline:2px solid var(--tally);outline-offset:1px}
     <button class="send" id="send" type="submit">An Fernseher senden</button>
   </form>
   <div class="msg" id="msg" hidden></div>
+
+  <h2 class="h2">Sicherung</h2>
+  <p class="sub">Quellen, Favoriten und Einstellungen als Datei sichern oder auf diesen Fernseher einspielen. Die Datei enthält deine Zugangsdaten.</p>
+  <a class="send ghost" id="bkGet" href="#">Sicherung herunterladen</a>
+  <label class="send ghost" for="bkFile">Sicherung einspielen</label>
+  <input id="bkFile" type="file" accept=".json,application/json" hidden>
+  <div class="msg" id="bkMsg" hidden></div>
 </main>
 <script>
 (function(){
@@ -71,6 +80,20 @@ input:focus,select:focus{outline:2px solid var(--tally);outline-offset:1px}
 
   function val(id){return document.getElementById(id).value.trim()}
   function show(t,k){var m=document.getElementById('msg');m.textContent=t;m.className='msg '+(k||'');m.hidden=false}
+
+  var base=location.pathname.replace(/\/$/,'');
+  document.getElementById('bkGet').href=base+'/backup';
+  function bk(t,k){var m=document.getElementById('bkMsg');m.textContent=t;m.className='msg '+(k||'');m.hidden=false}
+  document.getElementById('bkFile').onchange=function(){var f=this.files[0];if(!f)return;
+    var r=new FileReader();
+    r.onload=function(){var txt=String(r.result),ok=false;
+      try{var o=JSON.parse(txt);ok=o&&o.app==='OCMate'&&o.data}catch(e){}
+      if(!ok){bk('Das ist keine OCMate-Sicherung.','err');return}
+      var x=new XMLHttpRequest();x.open('POST',base+'/restore');x.setRequestHeader('Content-Type','application/json');
+      x.onload=function(){if(x.status===200)bk('Eingespielt. OCMate startet am Fernseher neu.','ok');else bk('Der Fernseher hat nicht angenommen. Bitte den QR-Code neu öffnen und erneut scannen.','err')};
+      x.onerror=function(){bk('Fernseher nicht erreichbar. Ist das QR-Fenster am Fernseher noch offen?','err')};
+      x.send(txt)};
+    r.readAsText(f)};
 
   document.getElementById('f').onsubmit=function(e){e.preventDefault();
     if(mode==='xtream'&&(!val('srv')||!val('user')||!val('pass'))){show('Bitte Server-Adresse, Benutzername und Passwort eintragen.','err');return}

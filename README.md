@@ -33,7 +33,7 @@ https://github.com/DEIN-NAME/ocmate/releases/latest/download/OCMate.apk
 
 In OCMate auf **Einstellungen → Playlist hinzufügen**:
 
-- **Xtream Codes:** Server, Benutzername, Passwort. Format **m3u8** lassen.
+- **Xtream Codes:** Server, Benutzername, Passwort.
 - **M3U-Link:** die Playlist-Adresse deines Anbieters.
 
 ## Fernbedienung
@@ -53,12 +53,13 @@ Neue Version von `app/src/main/assets/ocmate.html` hochladen → GitHub baut aut
 
 ## Grenzen
 
-- Streams im Format MPEG-TS (`.ts`) spielt die App nicht. Bei Xtream deshalb **m3u8** wählen.
-- Aufnahmen auf Speicher gibt es nicht. Catch-up funktioniert, wenn dein Anbieter Archive hat.
+- Aufnahmen auf Speicher gibt es noch nicht. Catch-up funktioniert, wenn dein Anbieter Archive hat.
+- iPhone: nur HLS-Streams (m3u8) und MP4-Filme; MKV-Filme spielt das iPhone nicht.
 
 ## Technik
 
-- Kotlin, WebView, Android 5.0+ (minSdk 21), Leanback-Starter für TV
+- Kotlin, WebView-Oberfläche, Android 5.0+ (minSdk 21), Leanback-Starter für TV
+- Wiedergabe über ExoPlayer (Media3): Hardware-Decoder für 4K/HEVC und Dolby, MPEG-TS und HLS, Filme in MKV/MP4
 - Netzwerk-Anfragen laufen über die App selbst. Dadurch funktionieren http-Streams und Server, die Browser blockieren (CORS).
 - Der Signaturschlüssel `app/ocmate.keystore` liegt bewusst im Projekt, damit jede neue Version sich über die alte installieren lässt. Für eine Veröffentlichung im Play Store bräuchte es einen eigenen, geheimen Schlüssel.
 
@@ -78,3 +79,11 @@ Die iPhone-Version liegt im Ordner `ios/` (Swift, gleiche Oberfläche). GitHub b
 - **Länder:** Einstellungen → Länder. Ein Klick blendet alle Gruppen eines Landes aus (z. B. TR, FR, NL).
 - **Lieblingsgruppen:** Stern in Einstellungen → Gruppen oder Menü-Taste ☰ auf einer Gruppe. Diese stehen in der Live-Liste oben.
 - **Mit Handy einrichten (Fire TV / Android TV):** Einstellungen → Playlist hinzufügen → „Mit Handy einrichten (QR-Code)“. QR-Code scannen, Zugangsdaten am Handy eintippen, senden. Funktioniert nur im selben WLAN, ohne fremden Server.
+
+## Neu in 3.0
+
+- **Echter Player (Fire TV / Android):** ExoPlayer statt Browser-Video. Unter Einstellungen → Player lässt sich auf den Web-Player zurückschalten.
+- **Filme und Serien** (Xtream): eigene Bereiche mit Kategorien, „Weiterschauen“, Spulen und automatischer nächster Folge.
+- **EPG:** wird im Hintergrund verarbeitet und zwischengespeichert (12 Stunden). Der Start blockiert nicht mehr.
+- **Sicherung:** Quellen, Favoriten und Einstellungen als Datei sichern und einspielen (Fire TV: über „Mit Handy einrichten“).
+- **Kindersicherung:** PIN wird nicht mehr im Klartext gespeichert, Sperre nach 5 Fehlversuchen, Löschen und Zurücksetzen nur mit PIN.

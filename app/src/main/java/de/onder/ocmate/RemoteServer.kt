@@ -18,7 +18,14 @@ import kotlin.concurrent.thread
  * und schickt M3U- oder Xtream-Zugangsdaten direkt an OCMate. Kein fremder Server beteiligt.
  * Läuft nur, solange das QR-Fenster offen ist, und nur mit einem zufälligen Zugangscode im Pfad.
  */
-class RemoteServer(private val context: Context, private val onSubmit: (String) -> Unit) {
+class RemoteServer(
+    private val context: Context,
+    private val onSubmit: (String) -> Unit,
+    private val onRestore: (String) -> Unit
+) {
+
+    /** Sicherung zum Herunterladen am Handy; leer = nicht freigegeben (z. B. Kindersicherung aktiv). */
+    @Volatile var backup: String = ""
 
     @Volatile private var server: ServerSocket? = null
     @Volatile private var token = ""
@@ -84,6 +91,19 @@ class RemoteServer(private val context: Context, private val onSubmit: (String) 
                         send(s, 200, "application/json; charset=utf-8", "{\"ok\":true}")
                         stop()
                     }
+                    method == "GET" && path == "/$token/backup" -> {
+                        if (backup.isEmpty()) {
+                            send(s, 404, "text/plain; charset=utf-8", "Keine Sicherung freigegeben. Ist am Fernseher eine PIN gesetzt, dort zuerst entsperren und das QR-Fenster neu öffnen.")
+                        } else {
+                            send(s, 200, "application/json; charset=utf-8", backup, "Content-Disposition: attachment; filename=\"ocmate-sicherung.json\"\r\n")
+                        }
+                    }
+                    method == "POST" && path == "/$token/restore" && length in 1..4194304 -> {
+                        val body = readBytes(input, length).toString(Charsets.UTF_8)
+                        onRestore(body)
+                        send(s, 200, "application/json; charset=utf-8", "{\"ok\":true}")
+                        stop()
+                    }
                     else -> send(s, 404, "text/plain; charset=utf-8", "Nicht gefunden. Bitte den QR-Code am Fernseher neu scannen.")
                 }
             } catch (e: Exception) {
@@ -124,11 +144,11 @@ class RemoteServer(private val context: Context, private val onSubmit: (String) 
             k to v.trim()
         }
 
-    private fun send(s: Socket, code: Int, type: String, body: String) {
+    private fun send(s: Socket, code: Int, type: String, body: String, extraHeader: String = "") {
         val bytes = body.toByteArray(Charsets.UTF_8)
         val reason = if (code == 200) "OK" else "Not Found"
         val header = "HTTP/1.1 $code $reason\r\nContent-Type: $type\r\nContent-Length: ${bytes.size}\r\n" +
-            "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+            extraHeader + "Cache-Control: no-store\r\nConnection: close\r\n\r\n"
         val out = s.getOutputStream()
         out.write(header.toByteArray(Charsets.ISO_8859_1))
         out.write(bytes)

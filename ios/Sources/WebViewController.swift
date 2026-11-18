@@ -109,6 +109,20 @@ final class WebViewController: UIViewController, WKURLSchemeHandler, WKScriptMes
             } else {
                 web.customUserAgent = userAgentChoice
             }
+        case "share":
+            // Sicherung als Datei über das Teilen-Menü weitergeben (AirDrop, Dateien, Mail …)
+            guard let name = body["name"] as? String, let text = body["text"] as? String else { return }
+            let safe = name.replacingOccurrences(of: "/", with: "-")
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(safe)
+            do {
+                try text.write(to: file, atomically: true, encoding: .utf8)
+            } catch {
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+            sheet.popoverPresentationController?.sourceView = view
+            sheet.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+            present(sheet, animated: true)
         default:
             break
         }
