@@ -80,7 +80,8 @@ final class WebViewController: UIViewController, WKURLSchemeHandler, WKScriptMes
             S.setItem = function(k, v){ setI.call(this, k, v); if (this === window.localStorage && String(k).indexOf('ocmate.') === 0) post({t:'set', k:String(k), v:String(v)}); };
             S.removeItem = function(k){ remI.call(this, k); if (this === window.localStorage) post({t:'del', k:String(k)}); };
           } catch (e) {}
-          window.OCNative = { setUserAgent: function(u){ post({t:'ua', v:u || ''}); }, stopStreams: function(){} };
+          window.OCNative = { setUserAgent: function(u){ post({t:'ua', v:u || ''}); }, stopStreams: function(){},
+            openExternal: function(u){ post({t:'open', u:String(u || '')}); return true; } };
           var origFetch = window.fetch.bind(window);
           window.fetch = function(input, init){
             var u = typeof input === 'string' ? input : (input && input.url) || String(input);
@@ -123,6 +124,18 @@ final class WebViewController: UIViewController, WKURLSchemeHandler, WKScriptMes
             sheet.popoverPresentationController?.sourceView = view
             sheet.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
             present(sheet, animated: true)
+        case "open":
+            // Film oder Sender an VLC übergeben (spielt auch MKV und MPEG-TS, die der Apple-Player nicht kann)
+            guard let raw = body["u"] as? String, !raw.isEmpty,
+                  let encoded = raw.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
+                  let url = URL(string: "vlc-x-callback://x-callback-url/stream?url=" + encoded) else { return }
+            UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                if !opened {
+                    self?.web.evaluateJavaScript(
+                        "window.ocToast&&ocToast('VLC ist nicht installiert. Die App „VLC media player“ gibt es kostenlos im App Store.')",
+                        completionHandler: nil)
+                }
+            }
         default:
             break
         }

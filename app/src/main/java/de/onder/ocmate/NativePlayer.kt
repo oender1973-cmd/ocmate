@@ -45,6 +45,8 @@ class NativePlayer(
     private var videoW = 0
     private var videoH = 0
     private var pixelRatio = 1f
+    /** Bildformat: "" = Original mit Balken, "zoom" = füllt und schneidet ab, "fill" = strecken */
+    private var fit = ""
 
     /** Position, Dauer und Zustand als JSON; wird zweimal pro Sekunde aufgefrischt. */
     @Volatile var state: String = "{}"
@@ -62,6 +64,8 @@ class NativePlayer(
                 .put("dur", dur)
                 .put("playing", p.isPlaying)
                 .put("buffering", p.playbackState == Player.STATE_BUFFERING)
+                .put("w", videoW)
+                .put("h", videoH)
                 .toString()
             main.postDelayed(this, 500)
         }
@@ -135,6 +139,17 @@ class NativePlayer(
         main.post { player?.seekTo(ms) }
     }
 
+    fun setFit(mode: String) {
+        main.post {
+            fit = mode
+            applyRect()
+        }
+    }
+
+    fun setSpeed(speed: Float) {
+        main.post { player?.setPlaybackSpeed(speed.coerceIn(0.5f, 2f)) }
+    }
+
     /** Tonspur oder Untertitel wählen; groupIndex < 0 schaltet die Art ab (Untertitel aus). */
     fun selectTrack(kind: String, groupIndex: Int, trackIndex: Int) {
         main.post {
@@ -174,9 +189,11 @@ class NativePlayer(
         }
         var vw = w
         var vh = h
-        if (videoW > 0 && videoH > 0) {
+        if (videoW > 0 && videoH > 0 && fit != "fill") {
             val ratio = videoW * pixelRatio / videoH
-            if (w.toFloat() / h > ratio) vw = (h * ratio).toInt() else vh = (w / ratio).toInt()
+            val windowWider = w.toFloat() / h > ratio
+            // Zoom: die kürzere Seite füllt das Fenster, der Überstand liegt außerhalb
+            if (windowWider != (fit == "zoom")) vw = (h * ratio).toInt() else vh = (w / ratio).toInt()
         }
         val lp = FrameLayout.LayoutParams(maxOf(vw, 1), maxOf(vh, 1))
         lp.leftMargin = x + (w - vw) / 2

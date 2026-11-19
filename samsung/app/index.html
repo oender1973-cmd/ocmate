@@ -171,6 +171,16 @@ html.nat .player-col::after{content:"";flex:1;background:var(--bg)}
 .tag{font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:.1em;padding:2px 7px;border-radius:4px;text-transform:uppercase}
 .tag.live{background:var(--live);color:#fff}
 .tag.cu{background:var(--focus);color:#06121f}
+.tag.res{background:var(--raise-2);color:var(--fg);border:1px solid var(--line)}
+/* Senderliste im Vollbild: schmale Spalte links, das Bild bleibt rechts sichtbar */
+.modal.side{place-items:stretch start;padding:0;background:linear-gradient(90deg,rgba(3,5,8,.9) 0,rgba(3,5,8,.55) 460px,rgba(3,5,8,0) 760px)}
+.modal.side .sheet{width:min(440px,100%);height:100%;max-height:none;border-radius:0;border-width:0 1px 0 0;background:rgba(16,23,31,.95);padding:14px}
+.modal.side .picklist{max-height:none;flex:1;min-height:0}
+.modal.side .chhead{position:static;background:none;padding:0 0 10px;align-items:center}
+.optrow{display:flex;flex-direction:column;gap:6px}
+.optrow>span{font-size:13px;color:var(--muted)}
+.optrow select{background:var(--bg);border:1px solid var(--line);border-radius:7px;color:var(--fg);padding:9px 11px;font:inherit}
+.vfav{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);border-radius:6px;padding:3px 4px;line-height:0}
 .info h1{font-family:var(--f-display);font-weight:600;font-size:28px;line-height:1.1;margin:8px 0 4px;text-wrap:balance}
 .info .time{font-family:var(--f-mono);font-size:13px;color:var(--muted);display:flex;gap:10px;align-items:center}
 .info .time .bar{flex:1;max-width:260px;margin:0}
@@ -361,7 +371,7 @@ body.fs .osd{top:auto;bottom:calc(28px + env(safe-area-inset-bottom,0px));left:5
         <div class="osd" id="osd" hidden></div>
         <div class="subs" id="subs" hidden></div>
         <div class="vhud" id="vodHud" hidden>
-          <div class="vh-top"><button class="btn" id="vodClose" type="button">Zurück</button><span class="vh-name" id="vodName"></span></div>
+          <div class="vh-top"><button class="btn" id="vodClose" type="button">Zurück</button><span class="vh-name" id="vodName" style="flex:1"></span><button class="btn" id="vodOpt" type="button">Optionen</button></div>
           <div class="vh-bot"><span class="mono" id="vodPos">0:00</span><span class="bar"><i id="vodBar"></i></span><span class="mono" id="vodDur"></span></div>
         </div>
       </div>
@@ -373,6 +383,7 @@ body.fs .osd{top:auto;bottom:calc(28px + env(safe-area-inset-bottom,0px));left:5
         <select id="audioSel" title="Tonspur" hidden></select>
         <select id="subSel" title="Untertitel" hidden></select>
         <span class="spacer"></span>
+        <button class="btn icon" id="bOpt" title="Optionen: Bildformat, Sleep-Timer, externer Player"></button>
         <button class="btn icon" id="bPip" title="Bild-in-Bild"></button>
         <button class="btn icon" id="bFull" title="Vollbild (F)"></button>
       </div>
@@ -436,7 +447,7 @@ const uid=()=>Math.random().toString(36).slice(2,10);
 const IS_TIZEN=!!window.tizen;
 const IS_IOS_APP=location.protocol==='ocmate:';
 const IN_APP=location.hostname==='appassets.androidplatform.net'||IS_TIZEN||IS_IOS_APP;
-const APP_VER='3.0';
+const APP_VER='3.1';
 const UA_PRESETS=[['','Standard (Player-Kennung, empfohlen)'],['webview','Browser (WebView)'],['Lavf/58.76.100','FFmpeg / Lavf'],['okhttp/4.12.0','OkHttp (Android-Player)']];
 const nativeStop=()=>{try{if(window.OCNative&&OCNative.stopStreams)OCNative.stopStreams()}catch(e){}};
 function applyUA(){try{if(window.OCNative&&OCNative.setUserAgent)OCNative.setUserAgent(P.ua||'')}catch(e){}}
@@ -452,14 +463,16 @@ const I={
   archive:'<path d="M3 12a9 9 0 103-6.7"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/>',
   play:'<path d="M8 5v14l11-7z"/>',restart:'<path d="M4 4v6h6"/><path d="M5.5 15a8 8 0 102-8.5L4 10"/>',
   live:'<circle cx="12" cy="12" r="3"/><path d="M7.8 7.8a6 6 0 000 8.4M16.2 7.8a6 6 0 010 8.4M5 5a10 10 0 000 14M19 5a10 10 0 010 14"/>',
-  x:'<path d="M6 6l12 12M18 6L6 18"/>'
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  bell:'<path d="M6 16v-5a6 6 0 0112 0v5l2 2H4z"/><path d="M10 20a2 2 0 004 0"/>',
+  more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'
 };
 const ic=(n,cls='')=>`<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
 
 /* ---------- Speicher ---------- */
 const LS='ocmate.v1';
 function loadP(){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return{}}}
-const P=Object.assign({playlists:[],activeId:null,fav:{},favGroups:{},hist:{},hidden:{},locked:{},vodPos:{},pin:'',epgOffset:0,last:{},xtExt:'m3u8'},loadP());
+const P=Object.assign({playlists:[],activeId:null,fav:{},favGroups:{},hist:{},hidden:{},locked:{},vodPos:{},vodFav:{},rem:{},pin:'',epgOffset:0,last:{},xtExt:'m3u8',fit:'',autoStart:'',sort:'',epgTtl:12},loadP());
 /* Kindersicherung: Die PIN wird nur als Prüfwert gespeichert. Das hält Kinder ab, ist aber kein Schutz gegen Fachleute. */
 function pinHash(pin){let h1=0xdeadbeef^pin.length,h2=0x41c6ce57;const t='ocmate|'+pin;
   for(let r=0;r<1500;r++)for(let i=0;i<t.length;i++){const ch=t.charCodeAt(i)+r;h1=Math.imul(h1^ch,2654435761);h2=Math.imul(h2^ch,1597334677)}
@@ -663,7 +676,7 @@ function applyEpgResult(r,label,at){S.epg=r.map;S.channels.forEach((c,i)=>{c.epg
 function shiftEpg(hours){const d=hours*36e5;if(!d)return;for(const e of S.epg){if(e[0].indexOf('xt:')===0)continue;for(const x of e[1]){x.start+=d;x.stop+=d}}}
 
 /* Zwischenspeicher (IndexedDB): Das EPG steht beim nächsten Start sofort bereit und wird höchstens alle 12 Stunden neu geholt. */
-const EPG_TTL=12*36e5;
+const epgTtl=()=>(+P.epgTtl||12)*36e5;
 function epgDb(){if(!epgDb.p)epgDb.p=new Promise(res=>{try{const r=indexedDB.open('ocmate',1);
   r.onupgradeneeded=()=>{r.result.createObjectStore('epg')};r.onsuccess=()=>res(r.result);r.onerror=()=>res(null);r.onblocked=()=>res(null)}catch(e){res(null)}});return epgDb.p}
 const idbReq=r=>new Promise((res,rej)=>{r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
@@ -701,7 +714,7 @@ async function loadEPG(p,force,fileBuf,fileName){
   const url=epgUrlFor(p);let had=false;
   if(!force&&!fileBuf){const c=await epgCacheLoad(p.id);if(P.activeId!==p.id)return;
     if(c){applyEpgCache(c);had=true;epgPill();refreshAll();
-      const fresh=Date.now()-c.meta.at<EPG_TTL&&c.meta.count===S.channels.length&&(!url||c.meta.label===url||!/^https?:/i.test(c.meta.label));
+      const fresh=Date.now()-c.meta.at<epgTtl()&&c.meta.count===S.channels.length&&(!url||c.meta.label===url||!/^https?:/i.test(c.meta.label));
       if(fresh||!url)return}}
   if(!url&&!fileBuf){S.epgInfo={state:'none'};epgPill();return}
   // Absturzschutz: Brach das letzte Laden ab (Speicher voll), beim Start nicht automatisch wiederholen
@@ -847,6 +860,22 @@ function avRect(k){const b=$('#stage').getBoundingClientRect();return[b.left,b.t
 function avResize(){if(!AV.on)return;requestAnimationFrame(()=>{if(!AV.on)return;try{
   if(AV.kind==='nat'){const r=S.view==='live'?avRect(window.devicePixelRatio||1):[0,0,0,0];OCNative.playerRect(r[0],r[1],r[2],r[3])}
   else webapis.avplay.setDisplayRect(...avRect(1920/innerWidth))}catch(e){}})}
+/* Bildformat: Original (Balken), Zoom (füllt, schneidet ab), Strecken. Zoom des Geräte-Players nur im Vollbild. */
+const FITS=[['','Original'],['zoom','Zoom'],['fill','Strecken']];
+function applyFit(){const f=P.fit||'';video.style.objectFit=f==='zoom'?'cover':f==='fill'?'fill':'contain';
+  if(!AV.on)return;try{
+    if(AV.kind==='nat'){if(OCNative.playerFit)OCNative.playerFit(f==='zoom'&&!isFs()?'':f)}
+    else webapis.avplay.setDisplayMethod(f?'PLAYER_DISPLAY_MODE_FULL_SCREEN':'PLAYER_DISPLAY_MODE_LETTER_BOX')}catch(e){}}
+const canSpeed=()=>AV.on?(AV.kind==='nat'&&!!OCNative.playerSpeed):true;
+function setSpeed(r){S.speed=r;try{if(AV.on){if(AV.kind==='nat'&&OCNative.playerSpeed)OCNative.playerSpeed(r)}else video.playbackRate=r}catch(e){}}
+function resTag(){const s=PL.state(),w=s.w||0,h=s.h||0;return!h?'':(w>=3800||h>=2000)?'4K':h>=1000?'1080p':h>=700?'720p':'SD'}
+/* Externer Player (VLC, MX …): eigene Wiedergabe zuerst beenden, damit der Anbieter nur eine Verbindung sieht */
+const hasExt=()=>!!(window.OCNative&&OCNative.openExternal);
+function extOpen(url,title){url=url||S.nowUrl;if(!url||!hasExt())return;
+  if(!title)title=S.vodNow?S.vodNow.name:S.current?S.current.name:'';
+  if(S.vodNow)stopVod();else{S.playToken=Symbol();S.endHook=null;stopVideo(video);avStop();nativeStop();if(isFs())setFs(false);
+    showStage('<div class="big">Externer Player</div>Die Wiedergabe läuft im anderen Player. Wähle hier einen Kanal, um wieder in OCMate zu schauen.')}
+  setTimeout(()=>{let ok=false;try{ok=OCNative.openExternal(url,title)}catch(e){}if(ok===false)toast('Kein externer Player gefunden. Installiere zum Beispiel VLC.')},700)}
 function avStop(){AV.tok=null;AV.cb=null;if(!AV.on)return;AV.on=false;
   if(AV.kind==='nat'){try{OCNative.playerStop()}catch(e){}document.documentElement.classList.remove('nat')}
   else{try{webapis.avplay.stop()}catch(e){}try{webapis.avplay.close()}catch(e){}}
@@ -855,14 +884,14 @@ function avPlay(url,onErr,onReady,startMs){
   avStop();$('#audioSel').hidden=$('#subSel').hidden=true;
   if(NAT()){const id=++AV.id;AV.kind='nat';AV.on=true;AV.cb={id,onErr,onReady};
     $('#stage').classList.add('av');document.documentElement.classList.add('nat');
-    try{OCNative.playerPlay(id,url,playerUA(),startMs||0);avResize()}catch(e){avStop();onErr('media','Player: '+e)}
+    try{OCNative.playerPlay(id,url,playerUA(),startMs||0);avResize();applyFit()}catch(e){avStop();onErr('media','Player: '+e)}
     return}
   const a=webapis.avplay,tok=Symbol();AV.tok=tok;AV.kind='tiz';
   if(!$('#stage object.av'))$('#stage').insertAdjacentHTML('afterbegin','<object class="av" type="application/avplayer"></object>');
   try{
     a.open(url);AV.on=true;$('#stage').classList.add('av');
     if(P.ua!=='webview'){try{a.setStreamingProperty('USER_AGENT',playerUA())}catch(e){}}
-    try{a.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX')}catch(e){}
+    applyFit();
     a.setDisplayRect(...avRect(1920/innerWidth));
     a.setListener({
       onbufferingstart(){},onbufferingprogress(){},onbufferingcomplete(){},
@@ -893,7 +922,7 @@ const PL={
   state(){const z={pos:0,dur:0,playing:false};
     if(AV.on&&AV.kind==='nat'){try{return Object.assign(z,JSON.parse(OCNative.playerState()))}catch(e){return z}}
     if(AV.on){try{const a=webapis.avplay;return{pos:a.getCurrentTime(),dur:a.getDuration(),playing:a.getState()==='PLAYING'}}catch(e){return z}}
-    return{pos:(video.currentTime||0)*1000,dur:isFinite(video.duration)?video.duration*1000:0,playing:!video.paused}},
+    return{pos:(video.currentTime||0)*1000,dur:isFinite(video.duration)?video.duration*1000:0,playing:!video.paused,w:video.videoWidth||0,h:video.videoHeight||0}},
   seek(ms){ms=Math.max(0,Math.round(ms));
     if(AV.on&&AV.kind==='nat'){try{OCNative.playerSeek(ms)}catch(e){}}
     else if(AV.on){try{webapis.avplay.seekTo(ms)}catch(e){}}
@@ -904,8 +933,8 @@ const PL={
     else if(on)video.pause();else video.play().catch(()=>{});
     return!on}
 };
-function playFail(k,det){showStage(`<div class="big err">Wiedergabe nicht möglich</div>${ERR[k]||ERR.media}${det?`<div class="note mono" style="margin-top:10px">${esc(det)}</div>`:''}`)}
-function endVodQuiet(){if(!S.vodNow)return;vodSave();clearInterval(S.vodTimer);S.vodNow=null;$('#vodHud').hidden=true;video.controls=!isFs()}
+function playFail(k,det){showStage(`<div class="big err">Wiedergabe nicht möglich</div>${ERR[k]||ERR.media}${det?`<div class="note mono" style="margin-top:10px">${esc(det)}</div>`:''}${hasExt()&&S.nowUrl?'<div style="margin-top:12px"><button class="btn" id="bExt" type="button">In externem Player öffnen</button></div>':''}`);const b=$('#bExt');if(b)b.onclick=()=>extOpen()}
+function endVodQuiet(){if(!S.vodNow)return;vodSave();clearInterval(S.vodTimer);S.vodNow=null;S.speed=1;$('#vodHud').hidden=true;video.controls=!isFs()}
 async function play(c,opts={}){
   if(!c)return;
   if(isLocked(c)&&!S.unlocked){if(!(await askPin()))return}
@@ -922,11 +951,13 @@ async function play(c,opts={}){
   if(!cu&&x&&(canTs()||AVP)){const base=url.replace(/\.(m3u8|ts)(\?.*)?$/i,'');urls=TIZ()&&AVP?[base+'.m3u8',base+'.ts']:[base+'.ts',base+'.m3u8']}
   const tried=[],token=Symbol();S.playToken=token;let cur=0,again=0;
   const run=AVP?avPlay:(u,e,r)=>playUrl(video,u,e,r);
-  const attempt=i=>{cur=i;run(urls[i],(k,det)=>{
+  const attempt=i=>{cur=i;S.nowUrl=urls[i];run(urls[i],(k,det)=>{
       if(S.playToken!==token)return;
       tried.push((urls[i].match(/\.(m3u8|ts)(\?|$)/i)||['','direkt'])[1].toUpperCase()+': '+(det||k));
       if(i+1<urls.length){stopVideo(video);avStop();nativeStop();showStage('<div class="big">Verbinde…</div>Anderes Stream-Format wird versucht.');setTimeout(()=>{if(S.playToken===token){showStage(null);attempt(i+1)}},1500)}
-      else playFail(k,tried.join('  |  '))},h=>{if(!AV.on)tracks(h)})};
+      else playFail(k,tried.join('  |  '))},h=>{if(!AV.on)tracks(h);
+      // Auflösung steht erst nach dem Start fest: Einblendung im Vollbild einmal auffrischen
+      setTimeout(()=>{if(S.playToken===token&&isFs()&&!S.vodNow&&$('#modal').hidden)osdInfo()},1500)})};
   // Bricht ein Live-Stream ab, bis zu dreimal neu verbinden
   S.endHook=()=>{if(S.playToken!==token||!AV.on)return;if(++again>3){avStop();playFail('net','Stream beendet');return}
     setTimeout(()=>{if(S.playToken===token)attempt(cur)},1000)};
@@ -956,14 +987,16 @@ function toggleFav(c){if(!c)return;const f=arrOf(P.fav,c.pid);const i=f.indexOf(
 function ctrlState(){const f=$('#bFav');const on=S.current&&isFav(S.current);f.classList.toggle('on',!!on);f.innerHTML=ic('star',on?'fill':'');f.disabled=!S.current;$('#bLast').disabled=!S.prev}
 
 /* ---------- Listen ---------- */
+const byName=(a,b)=>{const x=a._n||(a._n=norm(a.name)),y=b._n||(b._n=norm(b.name));return x<y?-1:x>y?1:0};
+const sorted=L=>P.sort==='az'?L.slice().sort(byName):L;
 function currentList(){
   const vis=S.channels.filter(c=>!isHidden(c));
-  if(S.q){const q=norm(S.q);return vis.filter(c=>norm(c.name).includes(q))}
+  if(S.q){const q=norm(S.q);return sorted(vis.filter(c=>norm(c.name).includes(q)))}
   const pid=P.activeId;
   if(S.group==='__fav')return arrOf(P.fav,pid).map(k=>S.byKey.get(k)).filter(c=>c&&!isHidden(c));
   if(S.group==='__hist')return arrOf(P.hist,pid).map(k=>S.byKey.get(k)).filter(c=>c&&!isHidden(c));
-  if(S.group==='__all')return vis;
-  return vis.filter(c=>c.group===S.group);
+  if(S.group==='__all')return sorted(vis);
+  return sorted(vis.filter(c=>c.group===S.group));
 }
 function groupLabel(){if(S.q)return'Suche: „'+S.q+'“';return{__all:'Alle Kanäle',__fav:'Favoriten',__hist:'Zuletzt gesehen'}[S.group]||S.group}
 function renderGroups(){
@@ -1037,7 +1070,7 @@ function renderInfo(){
   const list=a.filter(x=>x.stop>from&&x.start<to).slice(-80);let lastDay='';
   sch.innerHTML='<h3>Programm</h3><ol>'+list.map(x=>{const dl=dayLabel(x.start);const dh=dl!==lastDay?`<li class="dayh">${dl}</li>`:'';lastDay=dl;
     const st=x.stop<=now?'past':x.start<=now?'cur':'';const cu=st==='past'&&canCatchup(c,x);
-    return dh+`<li class="${st}"><button data-ps="${a.indexOf(x)}"><span class="mono">${hm(x.start)}</span><span>${esc(x.title)}</span>${cu?ic('archive','sm'):st==='cur'?ic('live','sm'):'<span></span>'}</button></li>`}).join('')+'</ol>';
+    return dh+`<li class="${st}"><button data-ps="${a.indexOf(x)}"><span class="mono">${hm(x.start)}</span><span>${esc(x.title)}</span>${cu?ic('archive','sm'):st==='cur'?ic('live','sm'):remIdx(c,x)>=0?ic('bell','sm'):'<span></span>'}</button></li>`}).join('')+'</ol>';
   const cur=sch.querySelector('li.cur');if(cur&&innerWidth>=900)cur.scrollIntoView({block:'nearest'});
 }
 function openProg(c,p){
@@ -1046,10 +1079,11 @@ function openProg(c,p){
   if(live&&canCatchup(c,p))btns.push(`<button class="btn" data-a="restart">${ic('restart')} Von Anfang an</button>`);
   if(cu)btns.push(`<button class="btn primary" data-a="cu">${ic('archive')} Catch-up abspielen</button>`);
   if(!live&&!cu&&p.stop<=now)btns.push('<span class="note" style="flex:1">Für diesen Kanal ist keine Aufzeichnung (Catch-up) verfügbar.</span>');
+  if(p.start>now)btns.push(`<button class="btn${live?'':' primary'}" data-a="rem">${ic('bell')} ${remIdx(c,p)>=0?'Erinnerung löschen':'Erinnern'}</button>`);
   btns.push('<button class="btn" data-a="close">Schließen</button>');
   openModal(`<div class="sub">${esc(c.name)} · ${dayLabel(p.start)} ${hm(p.start)}–${hm(p.stop)}</div><h2>${esc(p.title)}</h2>${p.desc?`<p>${esc(p.desc)}</p>`:''}<div class="acts">${btns.join('')}</div>`,m=>{
     m.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;closeModal();const a=b.dataset.a;
-      if(a==='live')play(c);else if(a==='restart'||a==='cu')play(c,{catchup:p})})});
+      if(a==='live')play(c);else if(a==='restart'||a==='cu')play(c,{catchup:p});else if(a==='rem')toggleRem(c,p)})});
 }
 
 /* ---------- TV-Guide ---------- */
@@ -1172,11 +1206,18 @@ function renderSettings(){
         <div><button class="btn primary" type="submit" id="addBtn" ${adding?'disabled':''}>${adding?'Wird geladen…':'Hinzufügen und laden'}</button></div>
       </form>
     </div></section>
+  <section><h2>Allgemein</h2><div class="card"><div class="grid3">
+      <div class="fld"><label for="asSel">Beim Start von OCMate</label><select id="asSel">${[['','Nichts abspielen'],['play','Letzten Sender starten'],['fs','Letzten Sender im Vollbild starten']].map(([v,l])=>`<option value="${v}" ${(P.autoStart||'')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="fld"><label for="sortSel">Reihenfolge der Kanäle</label><select id="sortSel"><option value="">Wie vom Anbieter</option><option value="az" ${P.sort==='az'?'selected':''}>A–Z</option></select></div>
+      <div class="fld"><label for="fitSel">Bildformat</label><select id="fitSel">${FITS.map(([v,l])=>`<option value="${v}" ${(P.fit||'')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+    </div></div></section>
+  ${rems().length?`<section><h2>Erinnerungen</h2><p class="sub">OCMate meldet sich eine Minute vor Beginn, solange die App geöffnet ist.</p><div class="card">${rems().map((r,i)=>`<div class="plrow"><div class="pmeta"><b>${esc(r.t)}</b><small>${dayLabel(r.s)} ${hm(r.s)} · ${esc(r.cn||'')}</small></div><div class="acts"><button class="btn" data-act="remDel" data-id="${i}">Löschen</button></div></div>`).join('')}</div></section>`:''}
   <section><h2>EPG</h2><p class="sub">${esc(p?p.name:'')} · ${epgState}</p>
     <div class="card">
       ${p&&p.type!=='demo'?`<div class="fld"><label for="eUrl">EPG-Link (XMLTV, auch .gz)</label><input id="eUrl" type="text" inputmode="url" ${TXT} value="${esc(p.epgUrl||'')}" placeholder="${esc(S.headerEpg||(p.type==='xtream'?'Vom Xtream-Server':'https://…/epg.xml.gz'))}"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="epgSave">Speichern und jetzt neu laden</button><label class="btn" for="eFile">EPG-Datei laden</label><input id="eFile" type="file" accept=".xml,.gz,.xmltv" hidden></div>`:'<p class="note">Die Demo nutzt ein erfundenes Programm.</p>'}
-      <div class="grid3"><div class="fld"><label for="eOff">Zeitversatz in Stunden</label><input id="eOff" type="number" step="0.5" min="-12" max="12" value="${P.epgOffset}"></div></div>
+      <div class="grid3"><div class="fld"><label for="eOff">Zeitversatz in Stunden</label><input id="eOff" type="number" step="0.5" min="-12" max="12" value="${P.epgOffset}"></div>
+        <div class="fld"><label for="eTtl">Automatisch aktualisieren</label><select id="eTtl">${[6,12,24,48].map(h=>`<option value="${h}" ${(+P.epgTtl||12)===h?'selected':''}>alle ${h} Stunden</option>`).join('')}</select></div></div>
     </div></section>
   ${TIZ()||NAT()?`<section><h2>Player</h2><p class="sub">Der Geräte-Player nutzt die Hardware des Fernsehers und spielt auch 4K und Dolby-Ton. Falls ein Sender nur Ton oder ein schwarzes Bild zeigt, probiere den Web-Player.</p>
     <div class="card"><div class="grid2"><div class="fld"><label for="plySel">Video-Player</label><select id="plySel"><option value="" ${P.player!=='web'?'selected':''}>Geräte-Player (empfohlen)</option><option value="web" ${P.player==='web'?'selected':''}>Web-Player</option></select></div></div></div></section>`:''}
@@ -1196,8 +1237,10 @@ function renderSettings(){
     <kbd>Kanal +/− · Bild ↑/↓</kbd><span>Kanal wechseln</span>
     <kbd>0–9</kbd><span>Kanalnummer eingeben</span>
     ${IN_APP?'<kbd>Zurück</kbd><span>Fenster schließen, zurück zu Live TV, zuletzt App beenden</span><kbd>„Letzter“-Button</kbd><span>Zum vorherigen Kanal</span>':'<kbd>Zurück · ⌫</kbd><span>Zum vorherigen Kanal</span>'}
-    <kbd>Menü ☰</kbd><span>Sender als Favorit bzw. Gruppe als Lieblingsgruppe markieren</span>
-    <kbd>Im Film: ← →</kbd><span>15 Sekunden zurück oder vor, OK für Pause, Zurück zum Beenden</span>
+    <kbd>Menü ☰</kbd><span>Sender als Favorit, Gruppe als Lieblingsgruppe, Film oder Serie auf die Merkliste</span>
+    <kbd>Im Vollbild: OK</kbd><span>Senderliste einblenden</span>
+    <kbd>Im Vollbild: → oder Menü ☰</kbd><span>Optionen: Bildformat, Tonspur, Untertitel, Sleep-Timer</span>
+    <kbd>Im Film: ← →</kbd><span>15 Sekunden zurück oder vor, OK für Pause, ↑ für Optionen, Zurück zum Beenden</span>
     <kbd>G</kbd><span>TV-Guide</span><kbd>L</kbd><span>Live TV</span><kbd>F</kbd><span>Vollbild</span><kbd>S</kbd><span>Favorit umschalten</span></div></div></section>
   <section><h2>Sicherung</h2><p class="sub">Sichert Quellen, Favoriten, Lieblingsgruppen und Länder-Einstellungen in einer Datei, zum Beispiel für ein zweites Gerät. Die Datei enthält deine Zugangsdaten, gib sie nicht weiter.</p>
     <div class="card">${hasRemote()?`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" data-act="remote">Mit Handy sichern oder einspielen (QR-Code)</button></div>`
@@ -1214,7 +1257,7 @@ async function onSettingsClick(e){
   if(a!=='del')delArm=null;if(a!=='reset')resetArm=false;
   if(a==='use'){await activate(id);go('live')}
   else if(a==='reload'){await activate(id);toast('Playlist neu geladen')}
-  else if(a==='del'){if(delArm!==id){delArm=id;renderSettings();return}delArm=null;if(hasPin()&&!(await askPin('PIN zum Löschen eingeben'))){renderSettings();return}P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);epgCacheClear(id);['fav','favGroups','hist','hidden','locked','last','vodPos'].forEach(k=>delete P[k][id]);
+  else if(a==='del'){if(delArm!==id){delArm=id;renderSettings();return}delArm=null;if(hasPin()&&!(await askPin('PIN zum Löschen eingeben'))){renderSettings();return}P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);epgCacheClear(id);['fav','favGroups','hist','hidden','locked','last','vodPos','vodFav','rem'].forEach(k=>delete P[k][id]);
     if(P.activeId===id){P.activeId=P.playlists[0]?P.playlists[0].id:null;save();await activate(P.activeId)}else{save();renderPlSel();renderSettings()}}
   else if(a==='epgSave'){const p=pl();p.epgUrl=fixUrl($('#eUrl').value);save();loadEPG(p,true).then(renderSettings);renderSettings()}
   else if(a==='pinSet'){const v=$('#pinNew').value;if(!/^\d{4}$/.test(v)){toast('Die PIN muss aus 4 Ziffern bestehen.');return}if(hasPin()&&!(await askPin('Aktuelle PIN eingeben')))return;P.pinH=pinHash(v);P.pin='';save();toast('PIN gespeichert');renderSettings()}
@@ -1222,6 +1265,7 @@ async function onSettingsClick(e){
   else if(a==='remote'){openRemote()}
   else if(a==='bkExport'){exportBackup()}
   else if(a==='ctryAll'){P.hidden[P.activeId]=[];save();renderGroups();renderChannels();renderSettings();const nb=$('[data-act="ctryAll"]');nb&&nb.focus({preventScroll:true});toast('Alle Gruppen eingeblendet')}
+  else if(a==='remDel'){rems().splice(+id,1);save();renderSettings();if(S.current)renderInfo()}
   else if(a==='clearHist'){P.hist[P.activeId]=[];save();renderGroups();toast('Verlauf geleert')}
   else if(a==='reset'){if(!resetArm){resetArm=true;renderSettings();return}resetArm=false;if(hasPin()&&!(await askPin('PIN zum Zurücksetzen eingeben'))){renderSettings();return}try{Object.keys(localStorage).filter(k=>k.startsWith('ocmate.')).forEach(k=>localStorage.removeItem(k))}catch(e){}try{indexedDB.deleteDatabase('ocmate')}catch(e){}setTimeout(()=>location.reload(),300)}
 }
@@ -1236,6 +1280,10 @@ async function onSettingsChange(e){
   else if(t.id==='bkFile'&&t.files[0]){const err=restoreBackup(await t.files[0].text());toast(err||'Sicherung eingespielt. OCMate startet neu.')}
   else if(t.id==='plySel'){P.player=t.value;save();avStop();stopVideo(video);toast('Player gespeichert. Sender neu starten.')}
   else if(t.id==='uaSel'||t.id==='uaOwn'){P.ua=t.id==='uaOwn'?t.value.trim():t.value;save();applyUA();renderSettings();toast('User-Agent gespeichert. Playlist mit „Neu laden“ erneut versuchen.')}
+  else if(t.id==='asSel'){P.autoStart=t.value;save();toast('Gespeichert. Gilt ab dem nächsten Start.')}
+  else if(t.id==='sortSel'){P.sort=t.value;save();renderChannels()}
+  else if(t.id==='fitSel'){P.fit=t.value;save();applyFit()}
+  else if(t.id==='eTtl'){P.epgTtl=+t.value||12;save()}
   else if(t.id==='eOff'){const old=P.epgOffset;P.epgOffset=+t.value||0;save();if(pl()&&pl().type==='demo')loadEPG(pl());else{shiftEpg(P.epgOffset-old);refreshAll()}}
   else if(t.id==='eFile'&&t.files[0]){const f=t.files[0];await loadEPG(pl(),true,await f.arrayBuffer(),f.name);renderSettings()}
 }
@@ -1298,7 +1346,7 @@ async function onAdd(e){
   P.playlists.push(p);save();
   await activate(id);adding=false;
   if(S.loadErr){
-    const msg=S.loadErr;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);delete S.volatileText[id];['fav','favGroups','hist','hidden','locked','last','vodPos'].forEach(k=>delete P[k][id]);save();
+    const msg=S.loadErr;P.playlists=P.playlists.filter(x=>x.id!==id);dropText(id);delete S.volatileText[id];['fav','favGroups','hist','hidden','locked','last','vodPos','vodFav','rem'].forEach(k=>delete P[k][id]);save();
     if(prev&&P.playlists.some(x=>x.id===prev))await activate(prev);else{P.activeId=P.playlists[0]?P.playlists[0].id:null;save();renderPlSel()}
     addMsg={t:'Nicht gespeichert: '+msg,k:'err'};renderSettings();const f=$('#aUrl')||$('#aSrv');f&&f.focus();return}
   addDraft=null;addMsg=null;addMode='url';
@@ -1307,8 +1355,8 @@ async function onAdd(e){
 
 /* ---------- Modal, PIN, Auswahl ---------- */
 let modalDone=null;
-function openModal(html,mount){const m=$('#modal');m.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;m.hidden=false;mount&&mount(m);if(!m.contains(document.activeElement)){const f=m.querySelector('input,button.primary,button');f&&f.focus()}}
-function closeModal(v){const m=$('#modal');m.hidden=true;m.innerHTML='';if(modalDone){const d=modalDone;modalDone=null;d(v)}}
+function openModal(html,mount,cls){const m=$('#modal');m.className='modal'+(cls?' '+cls:'');m.innerHTML=`<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;m.hidden=false;mount&&mount(m.firstElementChild);if(!m.contains(document.activeElement)){const f=m.querySelector('input,button.primary,button');f&&f.focus()}}
+function closeModal(v){const m=$('#modal');m.hidden=true;m.innerHTML='';m.className='modal';if(modalDone){const d=modalDone;modalDone=null;d(v)}}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal(null)});
 function askPin(title='PIN eingeben'){
   if(!hasPin())return Promise.resolve(true);
@@ -1353,7 +1401,7 @@ async function activate(id){
   stopVideo(video);showStage('<div class="big">Bereit</div>Wähle einen Kanal.');stopMV();
   S.current=null;S.prev=null;S.catchup=null;S.channels=[];S.byKey=new Map();S.groups=[];S.epg=new Map();S.epgInfo={state:'none'};S.headerEpg='';
   XT.tried.clear();XT.queue.length=0;
-  endVodQuiet();S.vod.cats={};S.vod.items=new Map();S.vod.cat=null;S.vod.list=[];
+  endVodQuiet();S.vod.cats={};S.vod.items=new Map();S.vod.cat=null;S.vod.list=[];S.vod.all={};S.vod.allErr=false;
   S.group='__all';S.guideGroup=null;S.mv.keys=[null,null,null,null];S.loadErr='';S.loading=true;epgPill();refreshAll();
   const p=pl();if(!p){S.loading=false;refreshAll();return}
   if(p.type==='url'&&toXtream(p))save();
@@ -1372,7 +1420,7 @@ async function activate(id){
 
 /* ---------- Filme und Serien (Xtream) ----------
    Kategorien und Titel werden erst beim Öffnen geladen, nie die ganze Bibliothek auf einmal. */
-S.vod={mode:'movie',cats:{},items:new Map(),cat:null,list:[],limit:0,q:''};
+S.vod={mode:'movie',cats:{},items:new Map(),cat:null,list:[],limit:0,q:'',all:{},allErr:false,title:''};
 S.vodNow=null;S.vodTimer=null;S.endHook=null;
 const VOD_API={movie:['get_vod_categories','get_vod_streams'],series:['get_series_categories','get_series']};
 const ADULT=/xxx|adult|erotik|porn|(^|\W)18\s*\+|\+\s*18/i;
@@ -1382,10 +1430,28 @@ const fmtT=ms=>{const t=Math.max(0,Math.floor(ms/1000)),h=Math.floor(t/3600),m=M
 const vodPos=()=>arrOf(P.vodPos,P.activeId);
 const vodKey=v=>v.kind+':'+v.id;
 function vodEntry(v){return vodPos().find(x=>x.k===vodKey(v))}
+const vodFavs=()=>arrOf(P.vodFav,P.activeId);
+const vodFavOf=movie=>vodFavs().filter(x=>(x.k.indexOf('movie:')===0)===movie);
+const isVodFav=v=>vodFavs().some(x=>x.k===vodKey(v));
+function toggleVodFav(v){if(!v||v.kind==='ep')return;const L=vodFavs(),i=L.findIndex(x=>x.k===vodKey(v));
+  if(i>=0){L.splice(i,1);toast(v.name+' von der Merkliste entfernt')}else{L.unshift({k:vodKey(v),n:v.name,i:v.icon,e:v.ext});if(L.length>300)L.length=300;toast(v.name+' auf die Merkliste gesetzt')}
+  save();const inGrid=document.activeElement&&document.activeElement.matches('.vcard'),idx=inGrid?+document.activeElement.dataset.vi:-1;
+  renderVodCats();
+  if(S.vod.cat==='__fav'&&!S.vod.q){S.vod.list=vodStored(vodFavOf(S.vod.mode==='movie'));renderVodGrid()}
+  else $$('#vodGrid .vcard').forEach(b=>{const x=S.vod.shown[+b.dataset.vi];if(x&&vodKey(x)===vodKey(v))b.outerHTML=vodCard(x,+b.dataset.vi)});
+  if(inGrid){const c=$(`#vodGrid [data-vi="${idx}"]`)||$('#vodGrid [data-vi]');c&&c.focus({preventScroll:true})}}
+const vodStored=L=>L.map(x=>({kind:x.k.split(':')[0],id:x.k.split(':')[1],name:x.n,icon:x.i,ext:x.e}));
+const vodMap=(mode,x)=>mode==='movie'
+  ?{kind:'movie',id:String(x.stream_id),name:x.name||'Ohne Titel',icon:x.stream_icon||'',ext:x.container_extension||'mp4',rating:x.rating,c:String(x.category_id||'')}
+  :{kind:'series',id:String(x.series_id),name:x.name||'Ohne Titel',icon:x.cover||'',plot:x.plot||'',rating:x.rating,year:String(x.releaseDate||x.release_date||x.year||'').slice(0,4),c:String(x.category_id||'')};
+/* Suche über alle Kategorien: Die ganze Titelliste wird erst bei der ersten Suche geholt */
+async function vodAll(mode){const V=S.vod;if(V.all[mode])return V.all[mode];if(V.allBusy)return null;V.allBusy=true;const pid=P.activeId;
+  try{const d=await xtApi(VOD_API[mode][1]);if(P.activeId===pid)V.all[mode]=(Array.isArray(d)?d:[]).map(x=>vodMap(mode,x))}catch(e){V.allErr=true}
+  V.allBusy=false;return V.all[mode]||null}
 function vodMsg(html){$('#vodGrid').innerHTML=`<div class="empty" style="grid-column:1/-1">${html}</div>`;$('#vodCount').textContent=''}
 async function openVod(mode){
   const V=S.vod;V.mode=mode;V.q='';$('#q').value='';
-  $('#vodCats').innerHTML='';$('#vodTitle').textContent=mode==='movie'?'Filme':'Serien';
+  $('#vodCats').innerHTML='';V.title=mode==='movie'?'Filme':'Serien';$('#vodTitle').textContent=V.title;
   if(!isXt()){vodMsg('Filme und Serien gibt es nur bei Xtream-Quellen.');return}
   if(!V.cats[mode]){vodMsg('Kategorien werden geladen…');const pid=P.activeId;
     try{const d=await xtApi(VOD_API[mode][0]);if(P.activeId!==pid||V.mode!==mode)return;
@@ -1393,7 +1459,7 @@ async function openVod(mode){
     catch(e){if(V.mode===mode)vodMsg('<b>Kategorien konnten nicht geladen werden.</b><br>'+esc(netMsg(e)));return}}
   renderVodCats();
   const vis=vodCatsVisible(),cont=vodPos().some(x=>(x.k.indexOf('movie:')===0)===(mode==='movie'));
-  const keep=V.cat&&(V.cat==='__cont'?cont:vis.some(c=>c.id===V.cat));
+  const keep=V.cat&&(V.cat==='__cont'?cont:V.cat==='__fav'?vodFavOf(mode==='movie').length>0:vis.some(c=>c.id===V.cat));
   if(keep)selectVodCat(V.cat);else if(cont)selectVodCat('__cont');else if(vis.length)selectVodCat(vis[0].id);else vodMsg('Keine Kategorien vorhanden.');
 }
 /* Länder, die in Live TV ausgeblendet sind, gelten auch hier */
@@ -1402,28 +1468,34 @@ function vodCatsVisible(){const off=new Set(countryStats().filter(e=>e.tag&&e.sh
 function renderVodCats(){const V=S.vod,movie=V.mode==='movie';
   const cont=vodPos().filter(x=>(x.k.indexOf('movie:')===0)===movie).length;
   const b=(id,name,extra,count)=>`<button class="grp" data-vc="${esc(id)}" aria-current="${V.cat===id}">${extra||''}<span class="gn">${esc(name)}</span><span class="gc">${count||''}</span></button>`;
-  $('#vodCats').innerHTML=(cont?b('__cont','Weiterschauen',ic('back','sm'),cont):'')+'<div class="gh">Kategorien</div>'+
+  const favN=vodFavOf(movie).length;
+  $('#vodCats').innerHTML=(cont?b('__cont','Weiterschauen',ic('back','sm'),cont):'')+(favN?b('__fav','Meine Liste',ic('star','sm'),favN):'')+'<div class="gh">Kategorien</div>'+
     vodCatsVisible().map(c=>b(c.id,c.name,hasPin()&&!S.unlocked&&ADULT.test(c.name)?ic('lock','sm'):'')).join('')}
 async function selectVodCat(id){const V=S.vod,mode=V.mode,pid=P.activeId;
   const cat=(V.cats[mode]||[]).find(c=>c.id===id);
   if(cat&&hasPin()&&!S.unlocked&&ADULT.test(cat.name)&&!(await askPin()))return;
   V.cat=id;V.q='';$('#q').value='';
   const gs=$('#vodCats').scrollTop;keepFocus(renderVodCats);$('#vodCats').scrollTop=gs;
-  $('#vodTitle').textContent=id==='__cont'?'Weiterschauen':(cat?cat.name:'');
-  if(id==='__cont'){V.list=vodPos().filter(x=>(x.k.indexOf('movie:')===0)===(mode==='movie')).map(x=>({kind:x.k.split(':')[0],id:x.k.split(':')[1],name:x.n,icon:x.i,ext:x.e}));renderVodGrid();return}
+  V.title=id==='__cont'?'Weiterschauen':id==='__fav'?'Meine Liste':(cat?cat.name:'');$('#vodTitle').textContent=V.title;
+  if(id==='__cont'){V.list=vodStored(vodPos().filter(x=>(x.k.indexOf('movie:')===0)===(mode==='movie')));renderVodGrid();return}
+  if(id==='__fav'){V.list=vodStored(vodFavOf(mode==='movie'));renderVodGrid();return}
   const key=mode+'|'+id;
   if(!V.items.has(key)){vodMsg('Titel werden geladen…');
     try{const d=await xtApi(VOD_API[mode][1],'&category_id='+encodeURIComponent(id));if(P.activeId!==pid||V.mode!==mode||V.cat!==id)return;
-      V.items.set(key,(Array.isArray(d)?d:[]).map(x=>mode==='movie'
-        ?{kind:'movie',id:String(x.stream_id),name:x.name||'Ohne Titel',icon:x.stream_icon||'',ext:x.container_extension||'mp4',rating:x.rating}
-        :{kind:'series',id:String(x.series_id),name:x.name||'Ohne Titel',icon:x.cover||'',plot:x.plot||'',rating:x.rating,year:String(x.releaseDate||x.release_date||x.year||'').slice(0,4)}))}
+      V.items.set(key,(Array.isArray(d)?d:[]).map(x=>vodMap(mode,x)))}
     catch(e){if(V.cat===id)vodMsg('<b>Titel konnten nicht geladen werden.</b><br>'+esc(netMsg(e)));return}}
   V.list=V.items.get(key);renderVodGrid();
 }
-function vodFiltered(){const q=norm(S.vod.q);return q?S.vod.list.filter(x=>norm(x.name).includes(q)):S.vod.list}
+function vodFiltered(){const V=S.vod,q=norm(V.q);if(!q)return V.list;
+  const all=q.length>=2&&V.all[V.mode];if(!all)return V.list.filter(x=>norm(x.name).includes(q));
+  // Ausgeblendete Länder und (ohne PIN) Erwachsenen-Kategorien bleiben auch in der Suche draußen
+  const ok=new Set(vodCatsVisible().filter(c=>!(hasPin()&&!S.unlocked&&ADULT.test(c.name))).map(c=>c.id)),out=[];
+  for(const x of all){if((!x.c||ok.has(x.c))&&(x._n||(x._n=norm(x.name))).includes(q)){out.push(x);if(out.length>=300)break}}
+  return out}
 function vodCard(v,i){const e=v.kind!=='series'&&vodEntry(v);
-  return`<button class="vcard" data-vi="${i}"><span class="vposter"><span class="vini">${esc(initials(v.name))}</span>${v.icon?`<img src="${esc(v.icon)}" alt="" loading="lazy" onerror="this.remove()">`:''}${e&&e.d?`<span class="bar"><i style="width:${Math.min(100,e.p/e.d*100).toFixed(0)}%"></i></span>`:''}</span><span class="vname">${esc(v.name)}</span></button>`}
+  return`<button class="vcard" data-vi="${i}"><span class="vposter"><span class="vini">${esc(initials(v.name))}</span>${v.icon?`<img src="${esc(v.icon)}" alt="" loading="lazy" onerror="this.remove()">`:''}${e&&e.d?`<span class="bar"><i style="width:${Math.min(100,e.p/e.d*100).toFixed(0)}%"></i></span>`:''}${v.kind!=='ep'&&isVodFav(v)?`<span class="vfav">${ic('star','fill fav sm')}</span>`:''}</span><span class="vname">${esc(v.name)}</span></button>`}
 function renderVodGrid(){const L=vodFiltered();S.vod.shown=L;S.vod.limit=0;$('#vodGrid').innerHTML='';$('#vodCount').textContent=L.length;
+  $('#vodTitle').textContent=S.vod.q?'Suche: „'+S.vod.q+'“':S.vod.title;
   if(!L.length){vodMsg(S.vod.q?'Kein Titel gefunden.':'Keine Titel in dieser Kategorie.');return}
   vodMore()}
 function vodMore(){const V=S.vod,L=V.shown||[];if(V.limit>=L.length)return;const n=Math.min(L.length,V.limit+60);let h='';
@@ -1432,13 +1504,18 @@ new IntersectionObserver(es=>{if(es.some(e=>e.isIntersecting)&&(S.view==='movies
 $('#vodCats').onclick=e=>{const b=e.target.closest('[data-vc]');if(b)selectVodCat(b.dataset.vc)};
 $('#vodGrid').onclick=e=>{const b=e.target.closest('[data-vi]');if(!b)return;const v=S.vod.shown[+b.dataset.vi];if(!v)return;S.vod.lastIdx=+b.dataset.vi;
   if(v.kind==='series')openSeries(v);else openMovie(v)};
+$('#vodGrid').addEventListener('contextmenu',e=>{const b=e.target.closest('[data-vi]');if(!b)return;e.preventDefault();toggleVodFav(S.vod.shown[+b.dataset.vi])});
+const favBtn=v=>`<button class="btn${isVodFav(v)?' on':''}" data-a="fav">${ic('star',isVodFav(v)?'fill':'')} ${isVodFav(v)?'Gemerkt':'Merken'}</button>`;
 
 const vdetHead=(v,sub)=>`<div class="vdet"><span class="vposter"><span class="vini">${esc(initials(v.name))}</span>${v.icon?`<img src="${esc(v.icon)}" alt="" onerror="this.remove()">`:''}</span><div class="vdet-t"><div class="sub" id="vSub">${esc(sub||'')}</div><h2>${esc(v.name)}</h2><p id="vPlot">${esc(v.plot||'')}</p></div></div>`;
 function openMovie(v){const e=vodEntry(v);
   openModal(vdetHead(v,v.kind==='ep'?v.sub:[v.rating&&+v.rating?'Bewertung '+(+v.rating).toFixed(1):''].filter(Boolean).join(' · '))+
-    `<div class="acts">${e?`<button class="btn primary" data-a="cont">${ic('play','fill')} Weiter bei ${fmtT(e.p)}</button><button class="btn" data-a="start">Von Anfang an</button>`:`<button class="btn primary" data-a="start">${ic('play','fill')} Abspielen</button>`}<button class="btn" data-a="x">Schließen</button></div>`,m=>{
+    `<div class="acts">${e?`<button class="btn primary" data-a="cont">${ic('play','fill')} Weiter bei ${fmtT(e.p)}</button><button class="btn" data-a="start">Von Anfang an</button>`:`<button class="btn primary" data-a="start">${ic('play','fill')} Abspielen</button>`}${v.kind==='movie'?favBtn(v):''}${hasExt()?`<button class="btn" data-a="ext">${IS_IOS_APP?'In VLC öffnen':'Externer Player'}</button>`:''}<button class="btn" data-a="x">Schließen</button></div>`,m=>{
     m.addEventListener('click',ev=>{const b=ev.target.closest('[data-a]');if(!b)return;const a=b.dataset.a;
-      if(a==='x'){closeModal(null);return}playVod(v,a==='cont'&&e?e.p:0)})});
+      if(a==='x'){closeModal(null);return}
+      if(a==='fav'){toggleVodFav(v);b.outerHTML=favBtn(v);const n=m.querySelector('[data-a="fav"]');n&&n.focus();return}
+      if(a==='ext'){closeModal(null);extOpen(vodUrl(v),v.name);return}
+      playVod(v,a==='cont'&&e?e.p:0)})});
   if(v.kind!=='movie')return;
   xtApi('get_vod_info','&vod_id='+encodeURIComponent(v.id)).then(d=>{const i=(d&&d.info)||{},pl=$('#vPlot'),sb=$('#vSub');
     if(d&&d.movie_data&&d.movie_data.container_extension)v.ext=d.movie_data.container_extension;
@@ -1447,8 +1524,9 @@ function openMovie(v){const e=vodEntry(v);
 }
 async function openSeries(v){
   openModal(vdetHead(v,[v.year,v.rating&&+v.rating?'Bewertung '+(+v.rating).toFixed(1):''].filter(Boolean).join(' · '))+
-    `<div class="seg" id="vSeasons" role="group" aria-label="Staffel"></div><div class="picklist" id="vEps"><div class="empty">Folgen werden geladen…</div></div><div class="acts"><button class="btn" data-a="x">Schließen</button></div>`,m=>{
-    m.querySelector('[data-a="x"]').onclick=()=>closeModal(null)});
+    `<div class="seg" id="vSeasons" role="group" aria-label="Staffel"></div><div class="picklist" id="vEps"><div class="empty">Folgen werden geladen…</div></div><div class="acts">${favBtn(v)}<button class="btn" data-a="x">Schließen</button></div>`,m=>{
+    m.querySelector('[data-a="x"]').onclick=()=>closeModal(null);
+    m.querySelector('.acts').addEventListener('click',ev=>{const b=ev.target.closest('[data-a="fav"]');if(!b)return;toggleVodFav(v);b.outerHTML=favBtn(v);const n=m.querySelector('[data-a="fav"]');n&&n.focus()})});
   let d;try{d=await xtApi('get_series_info','&series_id='+encodeURIComponent(v.id))}catch(e){const b=$('#vEps');if(b)b.innerHTML='<div class="empty">'+esc(netMsg(e))+'</div>';return}
   const box=$('#vEps');if(!box||$('#modal').hidden)return;
   if(d&&d.info&&d.info.plot&&$('#vPlot'))$('#vPlot').textContent=d.info.plot;
@@ -1488,7 +1566,7 @@ function playVod(v,startMs){
   if(S.vodNow)vodSave();clearInterval(S.vodTimer);
   v.back=S.vodNow?S.vodNow.back:(S.view==='movies'||S.view==='series'?S.view:'movies');v.seekAt=0;
   const token=Symbol();S.playToken=token;stopVideo(video);avStop();nativeStop();
-  S.vodNow=v;$('#audioSel').hidden=$('#subSel').hidden=true;
+  S.vodNow=v;S.speed=1;S.nowUrl=vodUrl(v);$('#audioSel').hidden=$('#subSel').hidden=true;
   if(S.view!=='live')go('live');setFs(true);
   $('#vodName').textContent=v.kind==='ep'?v.name+' · '+v.sub:v.name;
   showStage('<div class="big">Lädt…</div>'+esc(v.name));
@@ -1500,7 +1578,7 @@ function playVod(v,startMs){
   let n=0;S.vodTimer=setInterval(()=>{if(!S.vodNow)return;vodTick();if(++n%15===0)vodSave()},1000);
   vodHud();
 }
-function stopVod(){const v=S.vodNow;if(!v)return;vodSave();clearInterval(S.vodTimer);S.vodNow=null;S.endHook=null;S.playToken=Symbol();
+function stopVod(){const v=S.vodNow;if(!v)return;vodSave();clearInterval(S.vodTimer);S.vodNow=null;S.endHook=null;S.playToken=Symbol();S.speed=1;S.nowUrl='';
   stopVideo(video);avStop();nativeStop();$('#vodHud').hidden=true;setFs(false);
   showStage('<div class="big">Bereit</div>Wähle einen Kanal.');
   go(v.back);const c=$(`#vodGrid [data-vi="${S.vod.lastIdx||0}"]`)||$('#vodGrid [data-vi]');if(c){c.focus({preventScroll:true});c.scrollIntoView({block:'nearest'})}}
@@ -1514,11 +1592,66 @@ window.ocResume=function(){if(S.vodNow){const v=S.vodNow,e=vodEntry(v);playVod(v
 /* Medientasten der Fernbedienung (Android meldet sie getrennt) */
 window.ocMediaKey=function(k){if(!S.vodNow)return;if(k==='ff')vodSeek(60);else if(k==='rw')vodSeek(-60);else{PL.toggle();setTimeout(vodHud,150)}};
 
+/* ---------- Senderliste und Optionen im laufenden Bild ---------- */
+function openChList(){const c=S.current;if(!c||S.vodNow)return;
+  const L=(S.zap&&S.zap.length?S.zap:S.channels),i=Math.max(0,L.indexOf(c)),from=Math.max(0,i-150),part=L.slice(from,from+300);
+  openModal(`<div class="chhead"><h2>${esc(L===S.list?groupLabel():'Kanäle')}</h2><button class="btn" data-a="opt">${ic('more')} Optionen</button></div><div class="picklist" id="flL">${part.map(rowHTML).join('')}</div>`,m=>{
+    m.addEventListener('click',e=>{if(e.target.closest('[data-a="opt"]')){closeModal(null);openPlayerMenu();return}
+      const r=e.target.closest('.row');if(!r)return;const x=S.byKey.get(r.dataset.key);closeModal(null);if(x&&x!==S.current)play(x,{zapList:L,keepScroll:true})});
+    const on=m.querySelector('.row.on')||m.querySelector('.row');if(on){on.focus({preventScroll:true});on.scrollIntoView({block:'center'})}},'side')}
+const SLEEPS=[[0,'Aus'],[15,'15 Min'],[30,'30 Min'],[60,'60 Min'],[90,'90 Min']];
+function setSleep(min){S.sleepAt=min?Date.now()+min*6e4:0;S.sleepMin=min;S.sleepWarned=false;toast(min?`Sleep-Timer: Wiedergabe endet in ${min} Minuten`:'Sleep-Timer aus')}
+function openPlayerMenu(focusSel){const vod=S.vodNow,c=S.current;if(!vod&&!c)return;
+  const seg=(k,opts,cur)=>`<div class="seg" role="group">${opts.map(([v,l])=>`<button data-${k}="${v}" aria-pressed="${String(cur)===String(v)}">${l}</button>`).join('')}</div>`;
+  const prox=(id,label)=>$('#'+id).hidden?'':`<div class="optrow"><span>${label}</span><select data-proxy="${id}">${$('#'+id).innerHTML}</select></div>`;
+  const left=S.sleepAt?Math.max(1,Math.round((S.sleepAt-Date.now())/6e4)):0,rt=resTag();
+  openModal(`<div class="sub">${esc(vod?vod.name:c.name)}${rt?' · '+rt:''}</div><h2>Optionen</h2>
+    <div class="optrow"><span>Bildformat</span>${seg('fit',TIZ()&&AV.on?[FITS[0],FITS[2]]:FITS,P.fit||'')}</div>
+    ${prox('audioSel','Tonspur')}${prox('subSel','Untertitel')}
+    ${vod&&canSpeed()?`<div class="optrow"><span>Tempo</span>${seg('speed',[[1,'1×'],[1.25,'1,25×'],[1.5,'1,5×'],[2,'2×']],S.speed||1)}</div>`:''}
+    <div class="optrow"><span>Sleep-Timer${left?' · noch '+left+' Min':''}</span>${seg('sleep',SLEEPS,S.sleepAt?S.sleepMin:0)}</div>
+    <div class="acts" style="justify-content:flex-start">${vod?'':`<button class="btn${isFav(c)?' on':''}" data-a="fav">${ic('star',isFav(c)?'fill':'')} Favorit</button><button class="btn" data-a="list">Senderliste</button>`}${hasExt()&&S.nowUrl?`<button class="btn" data-a="ext">${IS_IOS_APP?'In VLC öffnen':'Externer Player'}</button>`:''}${!vod&&isFs()?'<button class="btn" data-a="fsx">Vollbild beenden</button>':''}<button class="btn primary" data-a="x">Schließen</button></div>`,m=>{
+    $$('select[data-proxy]',m).forEach(s=>{const o=$('#'+s.dataset.proxy);s.value=o.value;s.onchange=()=>{o.value=s.value;o.onchange&&o.onchange()}});
+    m.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const d=b.dataset;
+      if(d.fit!=null){P.fit=d.fit;save();applyFit();openPlayerMenu(`[data-fit="${d.fit}"]`)}
+      else if(d.sleep!=null){setSleep(+d.sleep);openPlayerMenu(`[data-sleep="${d.sleep}"]`)}
+      else if(d.speed!=null){setSpeed(+d.speed);openPlayerMenu(`[data-speed="${d.speed}"]`)}
+      else if(d.a==='fav'){toggleFav(c);openPlayerMenu('[data-a="fav"]')}
+      else if(d.a==='list'){closeModal(null);openChList()}
+      else if(d.a==='ext'){closeModal(null);extOpen()}
+      else if(d.a==='fsx'){closeModal(null);setFs(false)}
+      else if(d.a==='x')closeModal(null)});
+    const f=focusSel&&m.querySelector(focusSel);if(f)f.focus()})}
+/* Erinnerungen an kommende Sendungen (melden sich nur, solange OCMate offen ist) */
+const rems=()=>arrOf(P.rem,P.activeId);
+const remIdx=(c,p)=>rems().findIndex(r=>r.ck===c.key&&r.s===p.start);
+function toggleRem(c,p){const L=rems(),i=remIdx(c,p);
+  if(i>=0){L.splice(i,1);toast('Erinnerung gelöscht')}else{L.push({ck:c.key,cn:c.name,t:p.title,s:p.start});L.sort((a,b)=>a.s-b.s);if(L.length>50)L.length=50;toast(`Erinnerung gesetzt: ${dayLabel(p.start)} ${hm(p.start)} ${p.title}`)}
+  save();if(S.current===c)renderInfo()}
+function checkReminders(now){const pid=P.activeId,L=rems();if(!L.length||!S.channels.length)return;
+  const due=L.filter(r=>r.s-now<=60000);if(!due.length)return;
+  P.rem[pid]=L.filter(r=>r.s-now>60000);save();let shown=false;
+  for(const r of due){const c=S.byKey.get(r.ck);if(!c||now-r.s>10*6e4)continue;
+    if(S.current===c&&!S.catchup&&!S.vodNow){toast('Jetzt: '+r.t);continue}
+    if(shown||!$('#modal').hidden){toast(`Erinnerung: ${hm(r.s)} ${r.t} auf ${c.name}`);continue}
+    shown=true;
+    openModal(`<div class="sub">${ic('bell','sm')} Erinnerung · ${hm(r.s)} · ${esc(c.name)}</div><h2>${esc(r.t)}</h2><div class="acts"><button class="btn primary" data-a="go">${ic('play','fill')} Umschalten</button><button class="btn" data-a="x">Schließen</button></div>`,m=>{
+      m.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b)return;closeModal(null);if(b.dataset.a==='go')play(c,{keepScroll:true})})})}
+  if(S.current&&$('#modal').hidden)renderInfo()}
+function stopAllPlayback(html){if(S.vodNow)stopVod();S.playToken=Symbol();S.endHook=null;stopVideo(video);avStop();nativeStop();if(isFs())setFs(false);showStage(html)}
+setInterval(()=>{const now=Date.now();
+  if(S.sleepAt){if(now>=S.sleepAt){S.sleepAt=0;if(!$('#modal').hidden)closeModal(null);stopAllPlayback('<div class="big">Sleep-Timer</div>Die Wiedergabe wurde beendet. Wähle einen Kanal, um weiterzuschauen.')}
+    else if(S.sleepAt-now<=60000&&!S.sleepWarned){S.sleepWarned=true;toast('Sleep-Timer: Wiedergabe endet in 1 Minute')}}
+  checkReminders(now)},15000);
+window.ocToast=t=>toast(String(t));
+
 /* ---------- Ereignisse ---------- */
 $$('.nav button').forEach(b=>b.onclick=()=>go(b.dataset.view));
 $('#plSel').onclick=openSources;
 let qT=null;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{const val=e.target.value.trim();
-  if(S.view==='movies'||S.view==='series'){S.vod.q=val;renderVodGrid();return}
+  if(S.view==='movies'||S.view==='series'){const V=S.vod;V.q=val;renderVodGrid();
+    if(val.length>=2&&isXt()&&!V.all[V.mode]&&!V.allErr){$('#vodCount').textContent='ganze Bibliothek wird durchsucht…';vodAll(V.mode).then(a=>{if(a&&V.q&&(S.view==='movies'||S.view==='series'))renderVodGrid()})}
+    return}
   S.q=val;if(S.view!=='live')go('live');renderGroups();renderChannels()},200)});
 $('#groups').onclick=async e=>{const b=e.target.closest('.grp');if(!b)return;const g=b.dataset.g;
   if(g==='__ctry'){openCountries();return}
@@ -1534,12 +1667,18 @@ $('#chList').addEventListener('contextmenu',e=>{const r=e.target.closest('.row')
 function toggleFavGroup(g){if(!g||g.startsWith('__'))return;const f=arrOf(P.favGroups,P.activeId),i=f.indexOf(g);
   if(i>=0){f.splice(i,1);toast(g+' aus „Meine Gruppen“ entfernt')}else{f.push(g);toast(g+' zu „Meine Gruppen“ hinzugefügt')}
   save();keepFocus(renderGroups)}
-window.ocMenuKey=function(){const a=document.activeElement;if(!a)return;
+window.ocMenuKey=function(){if(!$('#modal').hidden)return;
+  if(S.vodNow||isFs()){openPlayerMenu();return}
+  const a=document.activeElement;if(!a)return;
+  if(a.matches('.vcard')){toggleVodFav(S.vod.shown[+a.dataset.vi]);return}
   if(a.matches('#chList .row'))toggleFav(S.byKey.get(a.dataset.key));else if(a.matches('.grp'))toggleFavGroup(a.dataset.g)};
 $('#groups').addEventListener('contextmenu',e=>{const g=e.target.closest('.grp');if(!g)return;e.preventDefault();toggleFavGroup(g.dataset.g)});
 $('#hits').onclick=e=>{const b=e.target.closest('[data-hit]');if(!b)return;const[c,p]=$('#hits')._hits[+b.dataset.hit];openProg(c,p)};
 $('#sched').onclick=e=>{const b=e.target.closest('[data-ps]');if(!b||!S.current)return;const p=progsOf(S.current)[+b.dataset.ps];if(p)openProg(S.current,p)};
-$('#bPrevCh').innerHTML=ic('up');$('#bNextCh').innerHTML=ic('down');$('#bLast').innerHTML=ic('back')+' Letzter';$('#bPip').innerHTML=ic('pip');$('#bFull').innerHTML=ic('full');
+$('#bPrevCh').innerHTML=ic('up');$('#bNextCh').innerHTML=ic('down');$('#bLast').innerHTML=ic('back')+' Letzter';$('#bPip').innerHTML=ic('pip');$('#bFull').innerHTML=ic('full');$('#bOpt').innerHTML=ic('more');
+$('#bOpt').onclick=()=>{if(S.current||S.vodNow)openPlayerMenu();else toast('Erst einen Kanal starten.')};
+$('#vodOpt').onclick=()=>openPlayerMenu();
+$('#stage').addEventListener('click',e=>{if(isFs()&&!S.vodNow&&!e.target.closest('button'))openChList()});
 $('#bPrevCh').onclick=()=>zap(-1);$('#bNextCh').onclick=()=>zap(1);
 $('#bLast').onclick=()=>S.prev&&play(S.prev,{keepScroll:true});
 $('#bFav').onclick=()=>toggleFav(S.current);
@@ -1547,10 +1686,11 @@ $('#bPip').onclick=async()=>{try{
   if(!video.requestPictureInPicture&&video.webkitSetPresentationMode){video.webkitSetPresentationMode(video.webkitPresentationMode==='picture-in-picture'?'inline':'picture-in-picture');return}
   if(document.pictureInPictureElement)await document.exitPictureInPicture();else await video.requestPictureInPicture()}catch(e){toast('Bild-in-Bild wird hier nicht unterstützt.')}};
 const isFs=()=>document.body.classList.contains('fs');
-function setFs(on){document.body.classList.toggle('fs',on);video.controls=!on||!!S.vodNow;avResize();if(on){const st=$('#stage');st.tabIndex=-1;st.focus({preventScroll:true});if(!S.vodNow)osdInfo()}else{const r=$('#chList .row.on');if(r)r.focus({preventScroll:true})}}
+function setFs(on){document.body.classList.toggle('fs',on);video.controls=!on||!!S.vodNow;avResize();applyFit();if(on){const st=$('#stage');st.tabIndex=-1;st.focus({preventScroll:true});if(!S.vodNow)osdInfo()}else{const r=$('#chList .row.on');if(r)r.focus({preventScroll:true})}}
 /* Kanal-Einblendung im Vollbild: Nummer, Name, was läuft und was danach kommt */
 function osdInfo(){const c=S.current;if(!c)return;const a=progsOf(c),i=nowIdx(a,Date.now()),p=S.catchup||a[i],n=S.catchup?null:a[i+1];
-  osd(`<div class="ot"><span class="mono">${c.num}</span>${esc(c.name)}${S.catchup?' <span class="tag cu">Catch-up</span>':''}</div>${p?`<div class="op">${hm(p.start)}–${hm(p.stop)} <b>${esc(p.title)}</b></div>`:''}${n?`<div class="op">Danach ${hm(n.start)} ${esc(n.title)}</div>`:''}`,4000)}
+  const rt=resTag();
+  osd(`<div class="ot"><span class="mono">${c.num}</span>${esc(c.name)}${S.catchup?' <span class="tag cu">Catch-up</span>':''}${rt?` <span class="tag res">${rt}</span>`:''}</div>${p?`<div class="op">${hm(p.start)}–${hm(p.stop)} <b>${esc(p.title)}</b></div>`:''}${n?`<div class="op">Danach ${hm(n.start)} ${esc(n.title)}</div>`:''}`,4000)}
 function fullscreen(){
   if(IS_IOS_APP&&video.webkitEnterFullscreen&&video.readyState>0){try{video.webkitEnterFullscreen();return}catch(e){}}
   if(IN_APP||!document.documentElement.requestFullscreen){setFs(!isFs());return}
@@ -1609,7 +1749,7 @@ if(IS_TIZEN){
   addEventListener('resize',avResize);
 }
 document.addEventListener('keydown',e=>{
-  if(!$('#modal').hidden){if(e.key==='Escape')closeModal(null);else if(ARROWS.includes(e.key)&&!(e.target.tagName==='INPUT'&&(e.key==='ArrowLeft'||e.key==='ArrowRight'))){e.preventDefault();spatial(e.key)}return}
+  if(!$('#modal').hidden){if(e.key==='Enter'&&e.repeat){e.preventDefault();return}if(e.key==='Escape')closeModal(null);else if(ARROWS.includes(e.key)&&!(e.target.tagName==='INPUT'&&(e.key==='ArrowLeft'||e.key==='ArrowRight'))){e.preventDefault();spatial(e.key)}return}
   const tag=(e.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='select'||tag==='textarea'){if(e.key==='Escape')e.target.blur();
     else if(ARROWS.includes(e.key)&&(tag==='select'||((e.key==='ArrowUp'||e.key==='ArrowDown')&&tag==='input'&&e.target.type!=='number'))){e.preventDefault();spatial(e.key)}return}
@@ -1621,13 +1761,18 @@ document.addEventListener('keydown',e=>{
     if(k==='ArrowLeft'||k==='MediaRewind'){e.preventDefault();vodSeek(k==='MediaRewind'?-60:-15);return}
     if(k==='ArrowRight'||k==='MediaFastForward'){e.preventDefault();vodSeek(k==='MediaFastForward'?60:15);return}
     if(k==='Enter'||k===' '||k==='MediaPlayPause'||k==='MediaPlay'||k==='MediaPause'){e.preventDefault();PL.toggle();setTimeout(vodHud,150);return}
-    if(k==='ArrowUp'||k==='ArrowDown'){e.preventDefault();vodHud();return}
+    if(e.target&&e.target.id==='vodOpt'&&k==='Enter')return;
+    if(k==='ArrowUp'){e.preventDefault();openPlayerMenu();return}
+    if(k==='ArrowDown'){e.preventDefault();vodHud();return}
     if(k==='Escape'||k==='MediaStop'){e.preventDefault();stopVod();return}
     return}
   if(isFs()){
     if(k==='ArrowUp'||k==='ChannelUp'||k==='PageUp'){e.preventDefault();zap(-1);return}
     if(k==='ArrowDown'||k==='ChannelDown'||k==='PageDown'){e.preventDefault();zap(1);return}
-    if(k==='Enter'||k===' '||k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();osdInfo();return}
+    if(k==='Enter'){e.preventDefault();if(!e.repeat)openChList();return}
+    if(k===' '){e.preventDefault();osdInfo();return}
+    if(k==='ArrowRight'){e.preventDefault();openPlayerMenu();return}
+    if(k==='ArrowLeft'){e.preventDefault();osdInfo();return}
     if(k==='Escape'){setFs(false);return}
   }
   if(k==='MediaStop'){avStop();stopVideo(video);return}
@@ -1653,7 +1798,10 @@ setInterval(()=>{if(S.view==='live'){refreshRows();const a=document.activeElemen
 /* ---------- Start ---------- */
 if(!P.playlists.length){P.playlists.push({id:'demo',name:'OCMate Demo',type:'demo'});P.activeId='demo';save()}
 if(!pl())P.activeId=P.playlists[0].id;
-applyUA();buildMV();renderPlSel();activate(P.activeId);
+if(IS_IOS_APP){video.setAttribute('x-webkit-airplay','allow');video.setAttribute('controlslist','nofullscreen nodownload')}
+applyUA();applyFit();buildMV();renderPlSel();
+activate(P.activeId).then(()=>{const c=P.autoStart&&S.byKey.get(P.last[P.activeId]);
+  if(c&&!S.current&&!S.vodNow&&S.view==='live'&&!isLocked(c)&&!isHidden(c))play(c,{keepScroll:true}).then(()=>{if(P.autoStart==='fs'&&S.current===c&&!IS_IOS_APP)setFs(true)})});
 </script>
 </body>
 </html>

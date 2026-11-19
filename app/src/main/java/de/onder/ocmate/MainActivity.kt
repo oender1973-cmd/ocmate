@@ -2,6 +2,8 @@ package de.onder.ocmate
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
@@ -98,6 +100,32 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun playerState(): String = player.state
+
+        @JavascriptInterface
+        fun playerFit(mode: String?) {
+            player.setFit(mode ?: "")
+        }
+
+        @JavascriptInterface
+        fun playerSpeed(speed: Double) {
+            player.setSpeed(speed.toFloat())
+        }
+
+        /** Stream an einen anderen Player auf dem Gerät übergeben (VLC, MX Player …). */
+        @JavascriptInterface
+        fun openExternal(url: String?, title: String?): Boolean {
+            if (url.isNullOrBlank()) return false
+            return try {
+                val view = Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(Uri.parse(url), "video/*")
+                    .putExtra("title", title ?: "")
+                    .putExtra(Intent.EXTRA_TITLE, title ?: "")
+                startActivity(Intent.createChooser(view, "Abspielen mit"))
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
 
         @JavascriptInterface
         fun playerTrack(kind: String, groupIndex: Int, trackIndex: Int) {

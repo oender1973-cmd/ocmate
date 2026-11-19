@@ -46,6 +46,9 @@ In OCMate auf **Einstellungen → Playlist hinzufügen**:
 | Ziffern | Kanalnummer direkt |
 | Zurück | Schließen, zurück zu Live TV, zuletzt App beenden |
 | Guide-Taste | TV-Guide |
+| Im Vollbild: OK | Senderliste einblenden |
+| Im Vollbild: → oder Menü ☰ | Optionen (Bildformat, Tonspur, Untertitel, Sleep-Timer, externer Player) |
+| Im Film: ↑ | Optionen (auch Tempo) |
 
 ## Updates
 
@@ -54,7 +57,8 @@ Neue Version von `app/src/main/assets/ocmate.html` hochladen → GitHub baut aut
 ## Grenzen
 
 - Aufnahmen auf Speicher gibt es noch nicht. Catch-up funktioniert, wenn dein Anbieter Archive hat.
-- iPhone: nur HLS-Streams (m3u8) und MP4-Filme; MKV-Filme spielt das iPhone nicht.
+- iPhone: der eingebaute Player spielt nur HLS-Streams (m3u8) und MP4-Filme. MKV-Filme lassen sich über „In VLC öffnen“ an die kostenlose VLC-App übergeben.
+- Erinnerungen und Sleep-Timer arbeiten nur, solange OCMate geöffnet ist.
 
 ## Technik
 
@@ -87,3 +91,13 @@ Die iPhone-Version liegt im Ordner `ios/` (Swift, gleiche Oberfläche). GitHub b
 - **EPG:** wird im Hintergrund verarbeitet und zwischengespeichert (12 Stunden). Der Start blockiert nicht mehr.
 - **Sicherung:** Quellen, Favoriten und Einstellungen als Datei sichern und einspielen (Fire TV: über „Mit Handy einrichten“).
 - **Kindersicherung:** PIN wird nicht mehr im Klartext gespeichert, Sperre nach 5 Fehlversuchen, Löschen und Zurücksetzen nur mit PIN.
+
+## Neu in 3.1
+
+- **Senderliste im Vollbild:** OK blendet links die Senderliste ein, ohne das Bild zu verlassen.
+- **Optionen im laufenden Bild:** Bildformat (Original, Zoom, Strecken), Tonspur, Untertitel, Sleep-Timer, bei Filmen das Tempo.
+- **Erinnerungen:** kommende Sendung im Programm öffnen → „Erinnern“. OCMate meldet sich eine Minute vorher.
+- **Start mit letztem Sender:** Einstellungen → Allgemein.
+- **Merkliste** für Filme und Serien (Menü-Taste ☰ auf dem Titel oder „Merken“ im Fenster), **Suche über die ganze Bibliothek** statt nur in einer Kategorie.
+- **Externer Player:** Sender oder Film an VLC, MX Player o. Ä. übergeben (Android/Fire TV: Auswahl des Systems; iPhone: VLC).
+- **Kleinigkeiten:** Kanäle A–Z sortieren, EPG-Intervall wählbar, Auflösung (4K/1080p) in der Einblendung, AirPlay auf dem iPhone.
